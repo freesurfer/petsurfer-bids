@@ -39,7 +39,8 @@ PETsurfer wiki https://surfer.nmr.mgh.harvard.edu/fswiki/PetSurfer
 Key capabilities
 ----------------
 
-* **Integrated MRI-PET workflow**: registration, motion correction, ROI/volume/surface analysis. 
+* **Integrated MRI-PET workflow**: registration, motion correction,
+  ROI/volume/surface analysis, MRI gradient distortion correction.
 * **Kinetic modeling (KM)**: MRTM1, MRTM2, and invasive Logan modeling.
 * **Partial volume correction (PVC)** methods: Symmetric GTM (SGTM), two-compartment (Meltzer),
   three-compartment (Müller-Gärtner / MG), and RBV; implementations also account for
