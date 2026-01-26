@@ -1,0 +1,575 @@
+#!/bin/tcsh -f
+# petsurfer-km - BIDS app to run invividual PETsurfer kinetic modeling after running petsurfer-prep
+if(-e $FREESURFER_HOME/sources.csh) then
+  source $FREESURFER_HOME/sources.csh
+endif
+
+set VERSION = '$Id$';
+set scriptname = `basename $0`
+
+set bidsdir = ()
+set bidsfsdir = ()
+set petsurferprepdir = ()
+set tacdir = ()
+set outdir = ();
+set subjlist = (sub-PS11);
+set subjlist = ()
+set hemilist = (lh rh);
+set sesslist = (baseline)
+set DoVol = 1
+set DoSurf = 1
+set ForceUpdate = 0
+set threads = 1
+set volfwhm = 6
+set surffwhm = 5
+set pvc = ()
+set DoMRTM1 = 0
+set DoMRTM2 = 0
+set MRTMRef = (Left-Cerebellum-Cortex Right-Cerebellum-Cortex)
+set MRTMHB = (Left-Putamen Right-Putamen)
+set DoLogan = 1
+set LoganTStar = 540;
+set bloodstreamdir = ()
+
+set tmpdir = ();
+set cleanup = 1;
+set LF = ();
+
+set inputargs = ($argv);
+set PrintHelp = 0;
+if($#argv == 0) goto usage_exit;
+set n = `echo $argv | grep -e -help | wc -l` 
+if($n != 0) then
+  set PrintHelp = 1;
+  goto usage_exit;
+endif
+set n = `echo $argv | grep -e -version | wc -l` 
+if($n != 0) then
+  echo $VERSION
+  exit 0;
+endif
+goto parse_args;
+parse_args_return:
+goto check_params;
+check_params_return:
+
+set StartTime = `date`;
+set tSecStart = `date '+%s'`;
+set year  = `date +%Y`
+set month = `date +%m`
+set day   = `date +%d`
+set hour   = `date +%H`
+set min    = `date +%M`
+
+mkdir -p $outdir/log
+pushd $outdir > /dev/null
+set outdir = `pwd`;
+popd > /dev/null
+
+if($#tmpdir == 0) then
+  if(-dw /scratch)   set tmpdir = /scratch/tmpdir.petsurfer-km.$$
+  if(! -dw /scratch) set tmpdir = $outdir/tmpdir.petsurfer-km.$$
+endif
+#mkdir -p $tmpdir
+
+# Set up log file
+if($#LF == 0) set LF = $outdir/log/petsurfer-km.Y$year.M$month.D$day.H$hour.M$min.log
+if($LF != /dev/null) rm -f $LF
+echo "Log file for petsurfer-km" >> $LF
+date  | tee -a $LF
+echo "" | tee -a $LF
+echo "setenv SUBJECTS_DIR $SUBJECTS_DIR" | tee -a $LF
+echo "cd `pwd`"  | tee -a $LF
+echo $0 $inputargs | tee -a $LF
+ls -l $0  | tee -a $LF
+echo "" | tee -a $LF
+cat $FREESURFER_HOME/build-stamp.txt | tee -a $LF
+echo $VERSION | tee -a $LF
+uname -a  | tee -a $LF
+echo "pid $$" | tee -a $LF
+if($?PBS_JOBID) then
+  echo "pbsjob $PBS_JOBID"  >> $LF
+endif
+if($?SLURM_JOB_ID) then
+  echo SLURM_JOB_ID $SLURM_JOB_ID >> $LF
+endif
+
+#========================================================
+
+
+foreach s ($subjlist)
+  foreach sess ($sesslist)
+    set sessdir = $petsurferprepdir/$s/ses-$sess/pet
+    set sessid = ${s}_ses-$sess
+    set tacsessdir = $petsurferprepdir/$s/ses-$sess/pet
+    set tac = $tacsessdir/${sessid}_${pvc}desc-preproc_seg-gtm_tacs.tsv
+    set mni = $sessdir/${sessid}_space-MNI152NLin2009cAsym_${pvc}desc-preproc_pet.nii.gz
+
+    set frametime = $outdir/frametime-petsurfer.dat
+    set ud = `UpdateNeeded $frametime $tac`
+    if($ud || $ForceUpdate) then
+      set cmd = (tsv2petsurfer --tsv $tac --frametime --o $frametime)
+      echo $cmd | tee -a $LF
+      $cmd | tee -a $LF
+      if($status) goto error_exit
+    endif
+
+    set pstab = $outdir/roi-tacs-petsurfer.dat
+    set ud = `UpdateNeeded $pstab $tac`
+    if($ud || $ForceUpdate) then
+      set cmd = (tsv2petsurfer --tsv $tac --all --o $pstab)
+      echo $cmd | tee -a $LF
+      $cmd | tee -a $LF
+      if($status) goto error_exit
+    endif
+
+    set volfwhmstr = `printf %02 $volfwhm`
+    set volsm = $outdir/mni152.sm$volfwhmstr.nii.gz
+    set volmask = $outdir/mni152.mask.nii.gz
+    if($DoVol) then
+      set volmean = $outdir/mni152.mean.nii.gz
+      set ud = `UpdateNeeded $volmean $mni`
+      if($ud || $ForceUpdate) then
+        set cmd = (mri_concat $mni --mean --o $volmean);
+        echo $cmd | tee -a $LF
+        $cmd | tee -a $LF
+        if($status) goto error_exit
+      endif
+      set ud = `UpdateNeeded $volmask $volmean`      
+      if($ud || $ForceUpdate) then
+        set cmd = (mri_binarize --i $volmean --min 1e-9 --o $volmask);
+        echo $cmd | tee -a $LF
+        $cmd | tee -a $LF
+        if($status) goto error_exit
+      endif
+      set ud = `UpdateNeeded $volsm $mni $volmask`
+      if($ud || $ForceUpdate) then      
+        if($volfwhm > 0)  set cmd = (mri_fwhm --fwhm $volfwhm --i $mni --o $volsm --mask $volmask)
+        if($volfwhm == 0) set cmd = (mri_convert $mni $volsm)
+        echo $cmd | tee -a $LF
+        $cmd | tee -a $LF
+        if($status) goto error_exit
+      endif
+    endif # DoVol
+
+    if($DoMRTM1) then
+      set reftac = $outdir/ref-tac-petsurfer.dat
+      set ud = `UpdateNeeded $reftac $tac`
+      if($ud || $ForceUpdate) then
+        set cmd = (tsv2petsurfer --tsv $tac --roiavg $MRTMRef --o $reftac)
+        echo $cmd | tee -a $LF
+        $cmd | tee -a $LF
+        if($status) goto error_exit
+      endif
+
+      set mrtm1hb = $outdir/mrtm1.hb
+      set k2primedat = $mrtm1hb/k2prime.dat
+      if($DoMRTM2) then
+        # get k2prime
+        set hbtac = $outdir/hb-tac-petsurfer.dat
+        set ud = `UpdateNeeded $hbtac $tac`
+        if($ud || $ForceUpdate) then
+          set cmd = (tsv2petsurfer --tsv $tac --roiavg $MRTMHB --hb --o $hbtac)
+          echo $cmd | tee -a $LF
+          $cmd | tee -a $LF
+          if($status) goto error_exit
+        endif
+
+        set ud = `UpdateNeeded $k2primedat $hbtac $reftac`
+        if($ud || $ForceUpdate) then
+          set cmd = (mri_glmfit --table $hbtac --mrtm1 $reftac $frametime --o $mrtm1hb)
+          echo $cmd | tee -a $LF
+          $cmd | tee -a $LF
+          if($status) goto error_exit
+        endif
+        echo "k2prime `cat $k2primedat`" | tee -a $LF
+      endif
+    endif
+
+    if($DoLogan) then
+      set aif = $bloodstreamdir/Primary_Analysis/$s/ses-$sess/pet/${s}_ses-${sess}_inputfunction.tsv
+      if($DoLogan == 1) set logandir = $outdir/logan.roi
+      if($DoLogan == 2) set logandir = $outdir/logan-ma1.roi
+      set dvr = $logandir/vt.dat
+      set ud = `UpdateNeeded $dvr $pstab $aif`
+      if($ud || $ForceUpdate) then
+        set cmd = (mri_glmfit --table $pstab --o $logandir --nii.gz)
+        if($DoLogan == 1) set cmd = ($cmd --logan $aif $frametime $LoganTStar)
+        if($DoLogan == 2) set cmd = ($cmd --logan-ma1 $aif $frametime $LoganTStar)
+        echo $cmd | tee -a $LF
+        $cmd | tee -a $LF
+        if($status) goto error_exit
+      endif
+
+      if($DoVol) then
+        if($DoLogan == 1) set logandir = $outdir/logan.mni
+        if($DoLogan == 2) set logandir = $outdir/logan-ma1.mni
+        set dvr = $logandir/vt.nii.gz
+        set ud = `UpdateNeeded $dvr $volsm $aif`
+        if($ud || $ForceUpdate) then
+          set cmd = (mri_glmfit --y $volsm --o $logandir --nii.gz)
+          if($DoLogan == 1) set cmd = ($cmd --logan $aif $frametime $LoganTStar)
+          if($DoLogan == 2) set cmd = ($cmd --logan-ma1 $aif $frametime $LoganTStar)
+          echo $cmd | tee -a $LF
+          $cmd | tee -a $LF
+          if($status) goto error_exit
+        endif
+      endif #Vol
+    endif #Logan
+
+    if($DoSurf) then
+      foreach hemi ($hemilist)
+        if($hemi == lh) set hemistr = L
+        if($hemi == rh) set hemistr = R
+        set f = $sessdir/${sessid}_hemi-{$hemistr}_${pvc}space-fsaverage_pet.func.gii
+        set surffwhmstr = `printf %02d $surffwhm`
+        set surfsm = $outdir/fsaverage.$hemi.sm$surffwhmstr.nii.gz
+        set ud = `UpdateNeeded $surfsm $f`
+        if($ud || $ForceUpdate) then
+          if($surffwhm >  0) set cmd = (mris_fwhm --s fsaverage --hemi $hemi --fwhm $surffwhm --cortex --i $f --o $surfsm)
+          if($surffwhm == 0) set cmd = (mri_convert $f $surfsm)
+          echo $cmd | tee -a $LF
+          $cmd | tee -a $LF
+          if($status) goto error_exit
+        endif
+        if($DoLogan == 1) set logandir = $outdir/logan.fsaverage.$hemi.sm$surffwhmstr
+        if($DoLogan == 2) set logandir = $outdir/logan-ma1.fsaverage.$hemi.sm$surffwhmstr
+        set dvr = $logandir/vt.nii.gz
+        set ud = `UpdateNeeded $dvr $surfsm $aif`
+        if($ud || $ForceUpdate) then
+          set cmd = (mri_glmfit --y $surfsm --surf fsaverage $hemi --o $logandir --nii.gz)
+          if($DoLogan == 1) set cmd = ($cmd --logan $aif $frametime $LoganTStar)
+          if($DoLogan == 2) set cmd = ($cmd --logan-ma1 $aif $frametime $LoganTStar)
+          echo $cmd | tee -a $LF
+          $cmd | tee -a $LF
+          if($status) goto error_exit
+        endif
+        
+      end
+    endif # DoLogan
+
+  end # session
+end # subject
+
+
+#========================================================
+
+# Cleanup
+# if($cleanup) rm -rf $tmpdir
+
+# Done
+echo " " |& tee -a $LF
+set tSecEnd = `date '+%s'`;
+@ tSecRun = $tSecEnd - $tSecStart;
+set tRunMin = `echo $tSecRun/60|bc -l`
+set tRunMin = `printf %5.2f $tRunMin`
+set tRunHours = `echo $tSecRun/3600|bc -l`
+set tRunHours = `printf %5.2f $tRunHours`
+echo "Started at $StartTime " |& tee -a $LF
+echo "Ended   at `date`" |& tee -a $LF
+echo "Petsurfer-Km-Run-Time-Sec $tSecRun" |& tee -a $LF
+echo "Petsurfer-Km-Run-Time-Min $tRunMin" |& tee -a $LF
+echo "Petsurfer-Km-Run-Time-Hours $tRunHours" |& tee -a $LF
+echo " " |& tee -a $LF
+echo "petsurfer-km Done" |& tee -a $LF
+exit 0
+
+###############################################
+
+############--------------##################
+error_exit:
+echo "ERROR:"
+
+exit 1;
+###############################################
+
+############--------------##################
+parse_args:
+set cmdline = ($argv);
+while( $#argv != 0 )
+
+  set flag = $argv[1]; shift;
+  
+  switch($flag)
+
+    case "--o":
+      if($#argv < 1) goto arg1err;
+      set outdir = $argv[1]; shift;
+      breaksw
+
+    case "--bids":
+      if($#argv < 1) goto arg1err;
+      set bidsdir = $argv[1]; shift;
+      breaksw
+    case "--petsurfer-prep":
+      if($#argv < 1) goto arg1err;
+      set petsurferprepdir = $argv[1]; shift;
+      breaksw
+    case "--tac":
+      if($#argv < 1) goto arg1err;
+      set tacdir = $argv[1]; shift;
+      breaksw
+
+    case "--s":
+      if($#argv < 1) goto arg1err;
+      set subject = $argv[1]; shift;
+      set subjlist = ($subjlist $subject)
+      breaksw
+
+    case "--baseline":
+      set sesslist = baseline
+      breaksw
+    case "--rescan":
+      set sesslist = rescan
+      breaksw
+
+    case "--sd":
+      if($#argv < 1) goto arg1err;
+      setenv SUBJECTS_DIR $argv[1]; shift;
+      breaksw
+
+    case "--threads":
+      if($#argv < 1) goto arg1err;
+      set threads = $argv[1]; shift;
+      breaksw
+
+    case "--mg":
+      set pvc = pvc-MG_
+      breaksw
+
+    case "--no-pvc":
+      set pvc = ()
+      breaksw
+
+    case "--vol-fwhm":
+      if($#argv < 1) goto arg1err;
+      set volfwhm = $argv[1]; shift;
+      breaksw
+    case "--surf-fwhm":
+      if($#argv < 1) goto arg1err;
+      set surffwhm = $argv[1]; shift;
+      breaksw
+
+    case "--bloodstream":
+      if($#argv < 1) goto arg1err;
+      set bloodstreamdir = $argv[1]; shift;
+      breaksw
+
+    case "--logan":
+      if($#argv < 1) goto arg1err;
+      set DoLogan = 1
+      set LoganTStar = $argv[1]; shift;
+      breaksw
+
+    case "--logan-ma1":
+      if($#argv < 1) goto arg1err;
+      set DoLogan = 2
+      set LoganTStar = $argv[1]; shift;
+      breaksw
+
+    case "--mrtm1":
+      if($#argv < 1) goto arg1err;
+      set DoMRTM1 = 1
+      set MRTMRef = ()
+      foreach arg ($argv)
+        set c = `echo "$arg"|cut -c1-2`
+        if("$c" == "--") break;
+        set MRTMRef = ($MRTMRef $arg)
+        shift;
+      end
+      echo "REF: $MRTMRef"
+      breaksw
+
+    case "--mrtm2":
+      if($#argv < 1) goto arg1err;
+      set DoMRTM2 = 1
+      set MRTMHB = ()
+      foreach arg ($argv)
+        set c = `echo "$arg"|cut -c1-2`
+        if("$c" == "--") break;
+        set MRTMHB = ($MRTMHB $arg)
+        shift;
+      end
+      echo "HB: $MRTMHB"
+      breaksw
+
+    case "--lh":
+      set hemilist = (lh)
+      breaksw
+
+    case "--rh":
+      set hemilist = (rh)
+      breaksw
+
+    case "--no-vol":
+      set DoVol = 0;
+      breaksw
+    case "--no-surf":
+      set DoSurf = 0;
+      breaksw
+
+    case "--force":
+     set ForceUpdate = 1
+     breaksw
+    case "--no-force":
+     set ForceUpdate = 0
+     breaksw
+
+    case "--log":
+      if($#argv < 1) goto arg1err;
+      set LF = $argv[1]; shift;
+      breaksw
+
+    case "--nolog":
+    case "--no-log":
+      set LF = /dev/null
+      breaksw
+
+    case "--tmp":
+    case "--tmpdir":
+      if($#argv < 1) goto arg1err;
+      set tmpdir = $argv[1]; shift;
+      set cleanup = 0;
+      breaksw
+
+    case "--nocleanup":
+      set cleanup = 0;
+      breaksw
+
+    case "--cleanup":
+      set cleanup = 1;
+      breaksw
+
+    case "--debug":
+      set verbose = 1;
+      set echo = 1;
+      breaksw
+
+    default:
+      echo ERROR: Flag $flag unrecognized. 
+      echo $cmdline
+      exit 1
+      breaksw
+  endsw
+
+end
+
+goto parse_args_return;
+############--------------##################
+
+############--------------##################
+check_params:
+
+if($#outdir == 0) then
+  echo "ERROR: must spec outdir"
+  exit 1;
+endif
+if($#subjlist == 0) then
+  echo "ERROR: must spec subject"
+  exit 1;
+endif
+
+setenv SUBJECTS_DIR $FREESURFER/subjects
+
+if($DoMRTM1 == 0 && $DoMRTM2 == 0 && $DoLogan == 0) then
+  echo "ERROR: nothing to do, spec --mrtm1 or --mrtm2 or --logan or --logan-ma1"
+  exit 1
+endif
+
+if($DoMRTM1 != 0 && $DoLogan != 0) then
+  echo "ERROR: cannot spec both mrtm and logan"
+  exit 1
+endif
+
+if($DoMRTM1 == 0 && $DoMRTM2 != 0) then
+  echo "ERROR: need --mrtm1 with --mrtm2"
+  exit 1
+endif
+
+if($DoLogan && $#bloodstreamdir == 0) then
+  set bloodstreamdir = $bidsdir/derivatives/bloodstream
+endif
+
+if($#petsurferprepdir == 0) set petsurferprepdir = $bidsdir/derivatives/petprep
+if($#tacdir == 0) set tacdir = $petsurferprepdir
+
+foreach s ($subjlist)
+  # Probably don't need this if not doing native stuff
+  if(0) then
+  if($#bidsfsdir) then
+    setenv SUBJECTS_DIR $bidsfsdir/sourcedata/freesurfer
+  endif
+  if(! -e $SUBJECTS_DIR/$s) then
+    echo "ERROR: cannot find $subject"
+    exit 1;
+  endif
+  endif
+  foreach sess ($sesslist)
+    set flist = ()
+    set sessdir = $petsurferprepdir/$s/ses-$sess/pet
+    set sessid = ${s}_ses-$sess
+    set mni = $sessdir/${sessid}_space-MNI152NLin2009cAsym_${pvc}desc-preproc_pet.nii.gz
+    if($DoVol) set flist = ($flist $mni)
+    set tacsessdir = $tacdir/$s/ses-$sess/pet
+    set tac = $tacsessdir/${sessid}_${pvc}desc-preproc_seg-gtm_tacs.tsv
+    set flist = ($flist $tac)
+    foreach hemi ($hemilist)
+      if($hemi == lh) set hemistr = L
+      if($hemi == rh) set hemistr = R
+      set f = $sessdir/${sessid}_hemi-{$hemistr}_${pvc}space-fsaverage_pet.func.gii
+      if($DoSurf) set flist = ($flist $f)
+    end
+    if($DoLogan) then
+      set aif = $bloodstreamdir/Primary_Analysis/$s/ses-$sess/pet/${s}_ses-${sess}_inputfunction.tsv
+      set flist = ($flist $aif)
+    endif
+    foreach f ($flist) 
+      if(-e $f) continue
+      echo "ERROR: cannot find $f"
+      exit 1
+    end
+  end
+end
+
+goto check_params_return;
+############--------------##################
+
+############--------------##################
+arg1err:
+  echo "ERROR: flag $flag requires one argument"
+  exit 1
+############--------------##################
+arg2err:
+  echo "ERROR: flag $flag requires two arguments"
+  exit 1
+############--------------##################
+
+############--------------##################
+usage_exit:
+  echo ""
+  echo "petsurfer-km : BIDS app to run invividual PETsurfer kinetic modeling after running petsurer-prep"
+  echo " --bids bidsdir"
+  echo " --petsurferprep petsurferprepdir (default bidsdir/derivatives/petprep)"
+  #echo " --fsbids fsbidsdir (if diff than bidsdir)"
+  echo " --s subject/participant (eg, sub-PS19)"
+  echo " --v visit (eg, baseline)"
+  echo " --surf-fwhm fwhm : smooth surface by this amount"
+  echo " --vol-fwhm fwhm : smooth volume by this amount"
+  echo " --mrtm1 refregions"
+  echo " --mrtm2 hbregions"
+  echo " --logan TStar"
+  echo " --logan-ma1 TStar"
+  echo " --bloodstream bloodstreamdir : output from running bloodstream app"
+  echo " --lh, --rh : analyze given hemisphere (default is both)"
+  echo " --no-vol : do not analyze in MNI152 volume space"
+  echo " --no-surf : do not do surface-based analysis"
+  echo " --mg : use MG PVC"
+  echo ""
+
+  if(! $PrintHelp) exit 1;
+  echo $VERSION
+  cat $0 | awk 'BEGIN{prt=0}{if(prt) print $0; if($1 == "BEGINHELP") prt = 1 }'
+exit 1;
+
+#---- Everything below here is printed out as part of help -----#
+BEGINHELP
