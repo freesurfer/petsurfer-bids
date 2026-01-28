@@ -260,14 +260,14 @@ def discover_inputs(
 
             # Log status
             if group.is_valid(require_input_function=require_input_function):
-                logger.debug(f"Valid input group: {group.label}")
-                logger.debug(f"  Volumetric PET: {group.pet_mni}")
-                logger.debug(f"  Surface PET (lh): {group.pet_fsaverage_lh}")
-                logger.debug(f"  Surface PET (rh): {group.pet_fsaverage_rh}")
+                logger.info(f"Valid input group: {group.label}")
+                logger.info(f"  Volumetric PET: {group.pet_mni}")
+                logger.info(f"  Surface PET (lh): {group.pet_fsaverage_lh}")
+                logger.info(f"  Surface PET (rh): {group.pet_fsaverage_rh}")
                 if group.input_function:
-                    logger.debug(f"  Input function: {group.input_function}")
+                    logger.info(f"  Input function: {group.input_function}")
                 if group.tacs:
-                    logger.debug(f"  TACs: {group.tacs}")
+                    logger.info(f"  TACs: {group.tacs}")
                 groups.append(group)
             else:
                 if group.missing:

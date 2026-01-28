@@ -264,7 +264,7 @@ Examples:
     )
     proc_group.add_argument(
         "--log-level",
-        choices=["error", "warn", "debug"],
+        choices=["error", "warn", "info", "debug"],
         default="warn",
         help="Logging verbosity level. Default: warn",
     )

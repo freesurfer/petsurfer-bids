@@ -16,11 +16,12 @@ def setup_logging(level: str) -> None:
     Configure logging for petsurfer-km.
 
     Args:
-        level: Log level string ('error', 'warn', or 'debug')
+        level: Log level string ('error', 'warn', 'info', or 'debug')
     """
     level_map = {
         "error": logging.ERROR,
         "warn": logging.WARNING,
+        "info": logging.INFO,
         "debug": logging.DEBUG,
     }
     log_level = level_map.get(level, logging.WARNING)
