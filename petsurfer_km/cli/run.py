@@ -1,10 +1,40 @@
 """Main entry point for petsurfer-km CLI."""
 
+import logging
 import sys
 from argparse import Namespace
 from pathlib import Path
 
 from petsurfer_km.cli.parser import build_parser
+
+logger = logging.getLogger("petsurfer_km")
+
+
+def setup_logging(level: str) -> None:
+    """
+    Configure logging for petsurfer-km.
+
+    Args:
+        level: Log level string ('error', 'warn', or 'debug')
+    """
+    level_map = {
+        "error": logging.ERROR,
+        "warn": logging.WARNING,
+        "debug": logging.DEBUG,
+    }
+    log_level = level_map.get(level, logging.WARNING)
+
+    # Configure format based on level
+    if log_level == logging.DEBUG:
+        fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    else:
+        fmt = "%(levelname)s: %(message)s"
+
+    logging.basicConfig(
+        level=log_level,
+        format=fmt,
+        handlers=[logging.StreamHandler(sys.stderr)],
+    )
 
 
 class ValidationError(Exception):
@@ -128,26 +158,25 @@ def run(args: Namespace) -> int:
     # TODO: Implement actual processing logic
     # This is a stub for now - will be implemented in subsequent tasks
 
-    if args.debug:
-        print(f"BIDS directory: {args.bids_dir}")
-        print(f"Output directory: {args.output_dir}")
-        print(f"Analysis level: {args.analysis_level}")
-        print(f"Kinetic methods: {args.km_method}")
-        print(f"PetPrep directory: {args.petprep_dir}")
-        print(f"Bloodstream directory: {args.bloodstream_dir}")
-        print(f"Work directory: {args.work_dir}")
-        print(f"Threads: {args.threads}")
-        if args.participant_label:
-            print(f"Participants: {args.participant_label}")
-        if args.session_label:
-            print(f"Sessions: {args.session_label}")
-        print(f"Volumetric FWHM: {args.vol_fwhm} mm")
-        print(f"Surface FWHM: {args.surf_fwhm} mm")
-        print(f"Hemispheres: {args.hemispheres}")
-        print(f"Skip volumetric: {args.no_vol}")
-        print(f"Skip surface: {args.no_surf}")
+    logger.debug(f"BIDS directory: {args.bids_dir}")
+    logger.debug(f"Output directory: {args.output_dir}")
+    logger.debug(f"Analysis level: {args.analysis_level}")
+    logger.debug(f"Kinetic methods: {args.km_method}")
+    logger.debug(f"PetPrep directory: {args.petprep_dir}")
+    logger.debug(f"Bloodstream directory: {args.bloodstream_dir}")
+    logger.debug(f"Work directory: {args.work_dir}")
+    logger.debug(f"Threads: {args.threads}")
+    if args.participant_label:
+        logger.debug(f"Participants: {args.participant_label}")
+    if args.session_label:
+        logger.debug(f"Sessions: {args.session_label}")
+    logger.debug(f"Volumetric FWHM: {args.vol_fwhm} mm")
+    logger.debug(f"Surface FWHM: {args.surf_fwhm} mm")
+    logger.debug(f"Hemispheres: {args.hemispheres}")
+    logger.debug(f"Skip volumetric: {args.no_vol}")
+    logger.debug(f"Skip surface: {args.no_surf}")
 
-    print("petsurfer-km: Processing not yet implemented")
+    logger.warning("Processing not yet implemented")
     return 0
 
 
@@ -159,6 +188,7 @@ def main(argv: list[str] | None = None) -> None:
         argv: Command-line arguments (defaults to sys.argv[1:])
     """
     args = parse_args(argv)
+    setup_logging(args.log_level)
     sys.exit(run(args))
 
 

@@ -263,9 +263,10 @@ Examples:
         help="FreeSurfer SUBJECTS_DIR. Default: uses SUBJECTS_DIR environment variable.",
     )
     proc_group.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable verbose debug output.",
+        "--log-level",
+        choices=["error", "warn", "debug"],
+        default="warn",
+        help="Logging verbosity level. Default: warn",
     )
     proc_group.add_argument(
         "-v",
