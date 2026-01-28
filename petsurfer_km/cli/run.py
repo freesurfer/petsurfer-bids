@@ -1,0 +1,166 @@
+"""Main entry point for petsurfer-km CLI."""
+
+import sys
+from argparse import Namespace
+from pathlib import Path
+
+from petsurfer_km.cli.parser import build_parser
+
+
+class ValidationError(Exception):
+    """Raised when argument validation fails."""
+
+    pass
+
+
+def validate_args(args: Namespace) -> None:
+    """
+    Validate parsed arguments for consistency.
+
+    Raises:
+        ValidationError: If validation fails.
+    """
+    # Check that tstar is provided for Logan methods
+    logan_methods = {"logan", "logan-ma1"}
+    selected_logan = logan_methods.intersection(args.km_method)
+    if selected_logan and args.tstar is None:
+        raise ValidationError(
+            f"--tstar is required when using {', '.join(sorted(selected_logan))} method(s)"
+        )
+
+    # Cannot disable both volumetric and surface analysis
+    if args.no_vol and args.no_surf:
+        raise ValidationError(
+            "Cannot disable both volumetric (--no-vol) and surface (--no-surf) analysis"
+        )
+
+    # Check bloodstream-dir exists for Logan methods (uses arterial input function)
+    if selected_logan:
+        bloodstream_dir = args.bloodstream_dir
+        if bloodstream_dir is None:
+            bloodstream_dir = args.bids_dir / "derivatives" / "bloodstream"
+        if not bloodstream_dir.exists():
+            raise ValidationError(
+                f"bloodstream-dir does not exist: {bloodstream_dir}\n"
+                f"Logan methods require arterial input function data from bloodstream."
+            )
+
+    # Check petprep-dir exists
+    petprep_dir = args.petprep_dir
+    if petprep_dir is None:
+        petprep_dir = args.bids_dir / "derivatives" / "petprep"
+    if not petprep_dir.exists():
+        raise ValidationError(
+            f"petprep-dir does not exist: {petprep_dir}\n"
+            f"Please run petprep first or specify --petprep-dir."
+        )
+
+
+def set_defaults(args: Namespace) -> Namespace:
+    """Set default values that depend on other arguments."""
+    # Set default petprep-dir
+    if args.petprep_dir is None:
+        args.petprep_dir = args.bids_dir / "derivatives" / "petprep"
+
+    # Set default bloodstream-dir
+    if args.bloodstream_dir is None:
+        args.bloodstream_dir = args.bids_dir / "derivatives" / "bloodstream"
+
+    # Set default work-dir
+    if args.work_dir is None:
+        import os
+
+        args.work_dir = Path(f"/tmp/petsurfer-km-{os.getpid()}")
+
+    # If mrtm2 is selected, ensure mrtm1 is also included (mrtm2 depends on mrtm1 output)
+    if "mrtm2" in args.km_method and "mrtm1" not in args.km_method:
+        args.km_method = ["mrtm1"] + args.km_method
+
+    # Handle hemisphere selection
+    if not args.lh and not args.rh:
+        # Default: process both hemispheres
+        args.hemispheres = ["lh", "rh"]
+    else:
+        args.hemispheres = []
+        if args.lh:
+            args.hemispheres.append("lh")
+        if args.rh:
+            args.hemispheres.append("rh")
+
+    return args
+
+
+def parse_args(argv: list[str] | None = None) -> Namespace:
+    """
+    Parse and validate command-line arguments.
+
+    Args:
+        argv: Command-line arguments (defaults to sys.argv[1:])
+
+    Returns:
+        Validated namespace of arguments.
+
+    Raises:
+        SystemExit: On parsing or validation errors.
+    """
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    args = set_defaults(args)
+
+    try:
+        validate_args(args)
+    except ValidationError as e:
+        parser.error(str(e))
+
+    return args
+
+
+def run(args: Namespace) -> int:
+    """
+    Execute petsurfer-km processing.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Exit code (0 for success, non-zero for errors).
+    """
+    # TODO: Implement actual processing logic
+    # This is a stub for now - will be implemented in subsequent tasks
+
+    if args.debug:
+        print(f"BIDS directory: {args.bids_dir}")
+        print(f"Output directory: {args.output_dir}")
+        print(f"Analysis level: {args.analysis_level}")
+        print(f"Kinetic methods: {args.km_method}")
+        print(f"PetPrep directory: {args.petprep_dir}")
+        print(f"Bloodstream directory: {args.bloodstream_dir}")
+        print(f"Work directory: {args.work_dir}")
+        print(f"Threads: {args.threads}")
+        if args.participant_label:
+            print(f"Participants: {args.participant_label}")
+        if args.session_label:
+            print(f"Sessions: {args.session_label}")
+        print(f"Volumetric FWHM: {args.vol_fwhm} mm")
+        print(f"Surface FWHM: {args.surf_fwhm} mm")
+        print(f"Hemispheres: {args.hemispheres}")
+        print(f"Skip volumetric: {args.no_vol}")
+        print(f"Skip surface: {args.no_surf}")
+
+    print("petsurfer-km: Processing not yet implemented")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    """
+    Main entry point for petsurfer-km CLI.
+
+    Args:
+        argv: Command-line arguments (defaults to sys.argv[1:])
+    """
+    args = parse_args(argv)
+    sys.exit(run(args))
+
+
+if __name__ == "__main__":
+    main()
