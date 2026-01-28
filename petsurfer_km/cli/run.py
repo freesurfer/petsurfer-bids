@@ -164,7 +164,6 @@ def run(args: Namespace) -> int:
     logger.debug(f"PetPrep directory: {args.petprep_dir}")
     logger.debug(f"Bloodstream directory: {args.bloodstream_dir}")
     logger.debug(f"Work directory: {args.work_dir}")
-    logger.debug(f"Threads: {args.threads}")
     if args.participant_label:
         logger.debug(f"Participants: {args.participant_label}")
     if args.session_label:

@@ -14,17 +14,6 @@ def existing_path(value: str) -> Path:
     return path
 
 
-def positive_int(value: str) -> int:
-    """Validate positive integer."""
-    try:
-        ivalue = int(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"Invalid integer: {value}")
-    if ivalue <= 0:
-        raise argparse.ArgumentTypeError(f"Must be positive: {value}")
-    return ivalue
-
-
 def positive_float(value: str) -> float:
     """Validate positive float."""
     try:
@@ -243,24 +232,6 @@ Examples:
         "--cleanup",
         action="store_true",
         help="Delete temporary files after processing (default behavior).",
-    )
-    proc_group.add_argument(
-        "--threads",
-        type=positive_int,
-        default=1,
-        metavar="N",
-        help="Number of parallel threads. Default: 1",
-    )
-    proc_group.add_argument(
-        "--force",
-        action="store_true",
-        help="Force recomputation of existing outputs.",
-    )
-    proc_group.add_argument(
-        "--sd",
-        type=Path,
-        metavar="PATH",
-        help="FreeSurfer SUBJECTS_DIR. Default: uses SUBJECTS_DIR environment variable.",
     )
     proc_group.add_argument(
         "--log-level",
