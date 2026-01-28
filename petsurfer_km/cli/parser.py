@@ -86,7 +86,9 @@ Examples:
         default=["mrtm1"],
         help=(
             "Kinetic modeling method(s) to run. Multiple methods can be specified. "
-            "Default: mrtm1"
+            "Methods are always executed in order: mrtm1, mrtm2, logan, logan-ma1. "
+            "Note: mrtm2 requires mrtm1 output; specifying mrtm2 automatically "
+            "includes mrtm1. Default: mrtm1"
         ),
     )
     km_group.add_argument(
@@ -232,6 +234,11 @@ Examples:
         "--cleanup",
         action="store_true",
         help="Delete temporary files after processing (default behavior).",
+    )
+    proc_group.add_argument(
+        "--abort-on-error",
+        action="store_true",
+        help="Abort processing if any subject fails. Default: log error and continue.",
     )
     proc_group.add_argument(
         "--log-level",
