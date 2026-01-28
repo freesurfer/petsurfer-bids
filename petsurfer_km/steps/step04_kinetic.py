@@ -171,6 +171,7 @@ def _compute_k2prime(
     Output: mrtm1.hb/k2prime.dat
 
     Adds to temps:
+        mrtm1_hb_dir: Path to mrtm1.hb/ output directory
         k2prime: Path to mrtm1.hb/k2prime.dat
     """
     output_dir = workdir / "mrtm1.hb"
@@ -197,6 +198,7 @@ def _compute_k2prime(
             f"k2prime file not created: {k2prime_file}"
         )
 
+    temps["mrtm1_hb_dir"] = output_dir
     temps["k2prime"] = k2prime_file
     logger.debug(f"k2prime computed: {k2prime_file}")
 
