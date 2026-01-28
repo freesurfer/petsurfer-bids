@@ -61,7 +61,7 @@ def run_bidsify(
     logger.info(f"Writing BIDS outputs for {inputs.label}")
 
     output_pet_dir = _make_output_dir(args.output_dir, subject, session)
-    _ensure_dataset_description(args.output_dir)
+    _ensure_dataset_description(args.output_dir, args.petprep_dir)
     prefix = _build_prefix(inputs)
 
     for method in args.km_method:
@@ -141,21 +141,44 @@ def _make_output_dir(
     return pet_dir
 
 
-def _ensure_dataset_description(output_dir: Path) -> None:
-    """Write ``dataset_description.json`` at derivative root if absent."""
+def _ensure_dataset_description(output_dir: Path, petprep_dir: Path) -> None:
+    """Write ``dataset_description.json`` at derivative root if absent.
+
+    Copies the ``SourceDatasets`` entry from the petprep
+    ``dataset_description.json`` if available, so the provenance chain
+    back to the original raw BIDS dataset is preserved.
+    """
     desc_file = output_dir / "dataset_description.json"
     if desc_file.exists():
         return
     output_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(desc_file, {
+
+    desc: dict = {
         "Name": "petsurfer-km",
         "BIDSVersion": "1.9.0",
         "DatasetType": "derivative",
         "GeneratedBy": [{
             "Name": "petsurfer-km",
             "Version": __version__,
+            "CodeURL": "https://github.com/freesurfer/petsurfer-km"
         }],
-    })
+        "HowToAcknowledge": "Please cite 1) https://doi.org/10.1016/j.neuroimage.2013.12.021 and 2) https://doi.org/10.1016/j.neuroimage.2016.02.042",
+        "License": "CC0",
+    }
+
+    # Copy SourceDatasets from petprep's dataset_description.json
+    petprep_desc_file = petprep_dir / "dataset_description.json"
+    if petprep_desc_file.exists():
+        try:
+            with open(petprep_desc_file) as f:
+                petprep_desc = json.load(f)
+            if "SourceDatasets" in petprep_desc:
+                desc["SourceDatasets"] = petprep_desc["SourceDatasets"]
+                logger.debug("Copied SourceDatasets from petprep dataset_description.json")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Could not read petprep dataset_description.json: {e}")
+
+    _write_json(desc_file, desc)
     logger.info(f"Created {desc_file}")
 
 
@@ -178,7 +201,8 @@ def _build_sidecar(
     """Build base JSON sidecar content for a given kinetic modeling method."""
     sidecar: dict = {
         "ModelName": MODEL_LABELS[method],
-        "SoftwareName": "FreeSurfer PetSurfer",
+        "SoftwareName": "petsurfer-km",
+        "SoftwareVersion": __version__,
     }
 
     # MRTM methods: reference region
