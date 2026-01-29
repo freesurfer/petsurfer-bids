@@ -69,13 +69,17 @@ def run_report(
         command_history: List of (command, description) tuples.
         args: Parsed command-line arguments.
     """
-    logger.info(f"Generating report for sub-{subject}")
+    label = f"sub-{subject}" + (f"_ses-{session}" if session else "")
+    logger.info(f"Generating report for {label}")
 
     output_dir = args.output_dir
-    figures_dir = _make_figures_dir(output_dir, subject)
+    figures_dir = _make_figures_dir(output_dir, subject, session)
 
     # Build BIDS-style prefix for figure filenames
     prefix = _build_prefix(inputs)
+
+    # Relative path from the HTML file to the figures directory
+    fig_rel_dir = f"sub-{subject}/figures" if not session else f"sub-{subject}/ses-{session}/figures"
 
     # Fetch MNI template (once, with graceful fallback)
     template_path = _fetch_mni_template()
@@ -103,7 +107,7 @@ def run_report(
                 )
                 fig_path = figures_dir / fig_name
                 _generate_volume_figure(vol_map, template_path, fig_path, meas)
-                rel = f"sub-{subject}/figures/{fig_name}"
+                rel = f"{fig_rel_dir}/{fig_name}"
                 method_figures.append(
                     f'<h5>Volumetric (MNI152)</h5>\n'
                     f'<img src="./{escape(rel)}" class="img-fluid mb-3" '
@@ -119,11 +123,11 @@ def run_report(
                     bids_hemi = HEMI_BIDS[hemi]
                     fig_name = (
                         f"{prefix}_model-{model}_meas-{meas}"
-                        f"_hemi-{bids_hemi}_space-fsaverage_mimap.svg"
+                        f"_hemi-{bids_hemi}_space-fsaverage_mimap.png"
                     )
                     fig_path = figures_dir / fig_name
                     _generate_surface_figure(surf_map, hemi, fig_path, meas)
-                    rel = f"sub-{subject}/figures/{fig_name}"
+                    rel = f"{fig_rel_dir}/{fig_name}"
                     method_figures.append(
                         f'<h5>Surface ({hemi.upper()}, fsaverage)</h5>\n'
                         f'<img src="./{escape(rel)}" class="img-fluid mb-3" '
@@ -164,13 +168,15 @@ def run_report(
     _write_report_html(
         output_dir=output_dir,
         subject=subject,
+        session=session,
         summary_section=summary_html,
         figures_sections=figure_sections,
         roi_sections=roi_sections,
         about_section=about_html,
     )
 
-    logger.info(f"Report written to {output_dir / f'sub-{subject}.html'}")
+    report_name = f"{label}.html"
+    logger.info(f"Report written to {output_dir / report_name}")
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +214,12 @@ def _fetch_mni_template() -> Path | None:
 # ---------------------------------------------------------------------------
 
 
-def _make_figures_dir(output_dir: Path, subject: str) -> Path:
-    """Create ``<output_dir>/sub-XX/figures/`` and return the path."""
-    figures_dir = output_dir / f"sub-{subject}" / "figures"
+def _make_figures_dir(output_dir: Path, subject: str, session: str | None) -> Path:
+    """Create ``<output_dir>/sub-XX/[ses-YY/]figures/`` and return the path."""
+    figures_dir = output_dir / f"sub-{subject}"
+    if session:
+        figures_dir = figures_dir / f"ses-{session}"
+    figures_dir = figures_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     return figures_dir
 
@@ -265,7 +274,10 @@ def _generate_surface_figure(
     output_path: Path,
     meas: str,
 ) -> None:
-    """Render lateral + medial surface views and save SVG.
+    """Render lateral + medial surface views and save as PNG.
+
+    PNG is used instead of SVG because the full-resolution fsaverage mesh
+    (163 842 vertices) produces SVG files > 100 MB.
 
     Our surface parametric maps are FreeSurfer NIfTI (N_vertices x 1 x 1).
     We load with nibabel, flatten, and pass to nilearn's
@@ -311,7 +323,7 @@ def _generate_surface_figure(
                 axes=ax,
             )
 
-        fig.savefig(str(output_path), format="svg", bbox_inches="tight")
+        fig.savefig(str(output_path), format="png", dpi=150, bbox_inches="tight")
         plt.close(fig)
         logger.debug(f"Surface figure saved: {output_path}")
 
@@ -479,12 +491,15 @@ def _build_prefix(inputs: InputGroup) -> str:
 def _write_report_html(
     output_dir: Path,
     subject: str,
+    session: str | None,
     summary_section: str,
     figures_sections: list[str],
     roi_sections: list[str],
     about_section: str,
 ) -> None:
     """Assemble all sections into a Bootstrap 5 HTML file."""
+
+    label = f"sub-{subject}" + (f"_ses-{session}" if session else "")
 
     figures_body = "\n".join(figures_sections) if figures_sections else (
         "<p><em>No parametric map figures available.</em></p>"
@@ -499,7 +514,7 @@ def _write_report_html(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>petsurfer-km &mdash; sub-{escape(subject)}</title>
+<title>petsurfer-km &mdash; {escape(label)}</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css"
       rel="stylesheet"
       integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65"
@@ -527,7 +542,7 @@ def _write_report_html(
         <li class="nav-item"><a class="nav-link" href="#roi">ROI Results</a></li>
         <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
       </ul>
-      <span class="navbar-text">sub-{escape(subject)}</span>
+      <span class="navbar-text">{escape(label)}</span>
     </div>
   </div>
 </nav>
@@ -569,7 +584,7 @@ def _write_report_html(
 </html>
 """
 
-    report_path = output_dir / f"sub-{subject}.html"
+    report_path = output_dir / f"{label}.html"
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w") as fh:
         fh.write(html)
