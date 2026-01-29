@@ -274,20 +274,23 @@ def _make_figures_dir(output_dir: Path, subject: str, session: str | None) -> Pa
     return figures_dir
 
 
-def _robust_vmax(data, percentile: float = 98.0) -> float | None:
-    """Return a robust max display value from non-zero data.
+def _robust_vlim(data, percentile: float = 98.0) -> tuple[float, float] | None:
+    """Return robust (vmin, vmax) display limits from non-zero data.
 
     Some methods (MRTM1, MA1) produce extreme outlier voxels (values > 10 000)
     while the meaningful signal sits near 0-5.  Using the raw min/max washes
-    out the colour scale.  We clip to the *percentile*-th percentile of
-    absolute non-zero values so that the bulk of the data is visible.
+    out the colour scale.  We clip to the lower and upper *percentile*
+    of non-zero values so that the bulk of the data is visible.
     """
     import numpy as np
 
     masked = data[data != 0]
     if masked.size == 0:
         return None
-    return float(np.percentile(np.abs(masked), percentile))
+    lo = 100.0 - percentile
+    vmin = float(np.percentile(masked, lo))
+    vmax = float(np.percentile(masked, percentile))
+    return vmin, vmax
 
 
 def _generate_volume_figure(
@@ -306,7 +309,7 @@ def _generate_volume_figure(
 
         img = nib.load(str(stat_map))
         data = np.asarray(img.dataobj)
-        vmax = _robust_vmax(data)
+        vlim = _robust_vlim(data)
 
         kwargs: dict = {
             "stat_map_img": str(stat_map),
@@ -318,8 +321,8 @@ def _generate_volume_figure(
         }
         if template is not None:
             kwargs["bg_img"] = str(template)
-        if vmax is not None:
-            kwargs["vmax"] = vmax
+        if vlim is not None:
+            kwargs["vmax"] = max(abs(vlim[0]), abs(vlim[1]))
 
         plot_stat_map(**kwargs)
         logger.debug(f"Volume figure saved: {output_path}")
@@ -359,7 +362,7 @@ def _generate_surface_figure(
         data = np.asarray(img.dataobj).ravel()
 
         # Robust display range (same logic as volumetric)
-        vmax = _robust_vmax(data)
+        vlim = _robust_vlim(data)
 
         # nilearn hemisphere keys
         if hemi == "lh":
@@ -380,8 +383,9 @@ def _generate_surface_figure(
             "bg_map": fsaverage[bg_key],
             "hemi": ("left" if hemi == "lh" else "right"),
         }
-        if vmax is not None:
-            surf_kwargs["vmax"] = vmax
+        if vlim is not None:
+            surf_kwargs["vmin"] = vlim[0]
+            surf_kwargs["vmax"] = vlim[1]
 
         for ax, view in zip(axes, ["lateral", "medial"]):
             plot_surf_stat_map(
