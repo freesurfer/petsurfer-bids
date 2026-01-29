@@ -163,7 +163,7 @@ def run_report(
 
     # Assemble full report
     summary_html = _build_summary_html(inputs, args, temps, template_warning)
-    about_html = _build_about_html(args)
+    about_html = _build_about_html(args, command_history)
 
     _write_report_html(
         output_dir=output_dir,
@@ -224,6 +224,22 @@ def _make_figures_dir(output_dir: Path, subject: str, session: str | None) -> Pa
     return figures_dir
 
 
+def _robust_vmax(data, percentile: float = 98.0) -> float | None:
+    """Return a robust max display value from non-zero data.
+
+    Some methods (MRTM1, MA1) produce extreme outlier voxels (values > 10 000)
+    while the meaningful signal sits near 0-5.  Using the raw min/max washes
+    out the colour scale.  We clip to the *percentile*-th percentile of
+    absolute non-zero values so that the bulk of the data is visible.
+    """
+    import numpy as np
+
+    masked = data[data != 0]
+    if masked.size == 0:
+        return None
+    return float(np.percentile(np.abs(masked), percentile))
+
+
 def _generate_volume_figure(
     stat_map: Path,
     template: Path | None,
@@ -238,15 +254,9 @@ def _generate_volume_figure(
         import numpy as np
         from nilearn.plotting import plot_stat_map
 
-        # Compute a robust display range so outlier voxels don't wash out
-        # the colour scale.
         img = nib.load(str(stat_map))
         data = np.asarray(img.dataobj)
-        masked = data[data != 0]
-        if masked.size > 0:
-            vmax = float(np.percentile(np.abs(masked), 99.5))
-        else:
-            vmax = None
+        vmax = _robust_vmax(data)
 
         kwargs: dict = {
             "stat_map_img": str(stat_map),
@@ -298,6 +308,9 @@ def _generate_surface_figure(
         img = nib.load(str(stat_map))
         data = np.asarray(img.dataobj).ravel()
 
+        # Robust display range (same logic as volumetric)
+        vmax = _robust_vmax(data)
+
         # nilearn hemisphere keys
         if hemi == "lh":
             mesh_key = "pial_left"
@@ -311,12 +324,18 @@ def _generate_surface_figure(
             subplot_kw={"projection": "3d"},
         )
 
+        surf_kwargs: dict = {
+            "surf_mesh": fsaverage[mesh_key],
+            "stat_map": data,
+            "bg_map": fsaverage[bg_key],
+            "hemi": ("left" if hemi == "lh" else "right"),
+        }
+        if vmax is not None:
+            surf_kwargs["vmax"] = vmax
+
         for ax, view in zip(axes, ["lateral", "medial"]):
             plot_surf_stat_map(
-                surf_mesh=fsaverage[mesh_key],
-                stat_map=data,
-                bg_map=fsaverage[bg_key],
-                hemi=("left" if hemi == "lh" else "right"),
+                **surf_kwargs,
                 view=view,
                 title=f"{meas} ({hemi.upper()}, {view})",
                 colorbar=(view == "lateral"),
@@ -459,12 +478,28 @@ def _build_summary_html(
     return warning + table
 
 
-def _build_about_html(args: Namespace) -> str:
+def _build_about_html(
+    args: Namespace,
+    command_history: list[tuple[str, str]],
+) -> str:
     """Build the About section HTML."""
     cmd_line = " ".join(sys.argv) if sys.argv else "(unavailable)"
+
+    # Commands executed during processing
+    if command_history:
+        cmd_items = "\n".join(
+            f"<li><strong>{escape(desc)}</strong><br>"
+            f"<code>{escape(cmd)}</code></li>"
+            for cmd, desc in command_history
+        )
+        cmds_cell = f'<ol class="mb-0">\n{cmd_items}\n</ol>'
+    else:
+        cmds_cell = "<em>No commands recorded.</em>"
+
     rows = [
         f"<tr><th>petsurfer-km version</th><td>{escape(__version__)}</td></tr>",
-        f"<tr><th>Command</th><td><code>{escape(cmd_line)}</code></td></tr>",
+        f"<tr><th>Invocation Command</th><td><code>{escape(cmd_line)}</code></td></tr>",
+        f"<tr><th>Commands Executed</th><td>{cmds_cell}</td></tr>",
     ]
     return (
         '<table class="table table-bordered">\n'
