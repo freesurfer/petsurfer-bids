@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "petsurfer-km"
-version = "0.1.1"
+dynamic = ["version"]
 description = "BIDS application for PET kinetic modeling with FreeSurfer"
 license = "MIT"
 requires-python = ">=3.10"
@@ -42,6 +42,9 @@ tsv2petsurfer = "petsurfer_km.tsv2petsurfer:main"
 
 [project.urls]
 Homepage = "https://github.com/freesurfer/petsurfer-bids"
+
+[tool.hatch.version]
+path = "petsurfer_km/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["petsurfer_km"]
