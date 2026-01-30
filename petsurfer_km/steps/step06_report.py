@@ -707,15 +707,17 @@ def _build_about_html(
         cmds_cell = "<em>No commands recorded.</em>"
 
     # Work directory cell (subject-level workdir)
-    work_dir_cell = escape(str(workdir if workdir is not None else args.work_dir))
+    work_dir_path = escape(str(workdir if workdir is not None else args.work_dir))
+    work_dir_cell = f"<code>{work_dir_path}</code>"
     if not args.nocleanup:
         work_dir_cell += (
-            '<br><em>Note: work directory was cleaned up and is no longer available. '
-            'Use --nocleanup to preserve work directory.</em>'
+            '<br><small><b>Note:</b> work directory was cleaned up and is no longer '
+            'available. Use <code>--nocleanup</code> to preserve work directory.</small>'
         )
 
     # Output directory cell (subject-level output dir)
-    output_dir_cell = escape(str(subject_outdir if subject_outdir is not None else args.output_dir))
+    output_dir_path = escape(str(subject_outdir if subject_outdir is not None else args.output_dir))
+    output_dir_cell = f"<code>{output_dir_path}</code>"
 
     # File mapping cell
     if file_mappings:
