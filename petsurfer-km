@@ -271,8 +271,8 @@ foreach s ($subjlist)
       endif
 
       if($DoVol) then
-        if($DoLogan == 1) set logandir = $outdir/logan.mni.sm$volfwhm
-        if($DoLogan == 2) set logandir = $outdir/logan-ma1.mni.sm$volfwhm
+        if($DoLogan == 1) set logandir = $outdir/logan.mni.sm$volfwhmstr
+        if($DoLogan == 2) set logandir = $outdir/logan-ma1.mni.sm$volfwhmstr
         set dvr = $logandir/vt.nii.gz
         set ud = `UpdateNeeded $dvr $volsm $aif`
         if($ud || $ForceUpdate) then
@@ -290,6 +290,7 @@ foreach s ($subjlist)
           if($DoLogan == 1) set logandir = $outdir/logan.fsaverage.$hemi.sm$surffwhmstr
           if($DoLogan == 2) set logandir = $outdir/logan-ma1.fsaverage.$hemi.sm$surffwhmstr
           set dvr = $logandir/vt.nii.gz
+          set surfsm = $outdir/fsaverage.$hemi.sm$surffwhmstr.nii.gz
           set ud = `UpdateNeeded $dvr $surfsm $aif`
           if($ud || $ForceUpdate) then
             set cmd = (mri_glmfit --y $surfsm --surf fsaverage $hemi --o $logandir --nii.gz)
