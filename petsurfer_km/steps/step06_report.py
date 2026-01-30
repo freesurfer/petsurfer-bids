@@ -108,7 +108,8 @@ def _generate_freebrowse_viewer(
     with open(nvd_template_path) as f:
         nvd_template = json.load(f)
 
-    # Set overlay colour limits from the robust vlim
+    # Set overlay name and colour limits from the robust vlim
+    nvd_template["imageOptionsArray"][1]["name"] = bids_mimap.name
     nvd_template["imageOptionsArray"][1]["cal_min"] = vlim[0]
     nvd_template["imageOptionsArray"][1]["cal_max"] = vlim[1]
 
