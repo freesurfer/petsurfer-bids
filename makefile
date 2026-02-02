@@ -1,7 +1,10 @@
 IMAGE_NAME := freesurfer/petsurfer-bids
-TAG := latest
+TAG := $(shell python3 -c "import re; print(re.search(r'__version__\s*=\s*\"(.+?)\"', open('petsurfer_km/__init__.py').read()).group(1))")
 
-.PHONY: docker
+.PHONY: build
 
-docker:
+build:
 	docker build -t $(IMAGE_NAME):$(TAG) .
+
+push:
+	docker push -t $(IMAGE_NAME):$(TAG)

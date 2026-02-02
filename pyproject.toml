@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "petsurfer-km"
+dynamic = ["version"]
+description = "BIDS application for PET kinetic modeling with FreeSurfer"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "PetSurfer Team" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = [
+    "pybids>=0.16.0",
+    "numpy",
+    "nilearn>=0.10.1",
+    "matplotlib>=3.6",
+    "templateflow>=23.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[project.scripts]
+petsurfer-km = "petsurfer_km.run:main"
+tsv2petsurfer = "petsurfer_km.tsv2petsurfer:main"
+
+[project.urls]
+Homepage = "https://github.com/freesurfer/petsurfer-bids"
+
+[tool.hatch.version]
+path = "petsurfer_km/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["petsurfer_km"]
