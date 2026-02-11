@@ -57,7 +57,7 @@ Development
 
 ```
 conda create -n petsurfer-bids python=3.8 -y
-conda activate petsurfer
+conda activate petsurfer-bids
 git clone git@github.com:freesurfer/petsurfer-bids.git
 cd petsurfer-bids
 pip install -e .
