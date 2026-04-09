@@ -270,6 +270,8 @@ cd petsurfer-bids
 pip install -e .
 ```
 
+When making changes, please bump the vesion number in [`petsurfer_km/__init__.py`](petsurfer_km/__init__.py)
+
 ## Recommended citation
 
 If you use PETSurfer, please cite:
