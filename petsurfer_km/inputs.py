@@ -25,6 +25,7 @@ class InputGroup:
     pet_mni: Path | None = None  # Volumetric PET in MNI space
     pet_fsaverage_lh: Path | None = None  # Surface PET, left hemisphere
     pet_fsaverage_rh: Path | None = None  # Surface PET, right hemisphere
+    anat_brain_mask_mni: Path | None = None  # Brain mask in MNI space (from petprep anat)
     tacs: Path | None = None  # Tissue activity curves (GTM)
 
     # Bloodstream outputs
@@ -157,6 +158,7 @@ def _find_petprep_files(
         "pet_mni": None,
         "pet_fsaverage_lh": None,
         "pet_fsaverage_rh": None,
+        "anat_brain_mask_mni": None,
         "tacs": None,
     }
 
@@ -172,6 +174,35 @@ def _find_petprep_files(
     )
     if mni_files:
         files["pet_mni"] = Path(mni_files[0])
+
+    # Find brain mask in MNI space (from anat datatype)
+    mask_files = layout.get(
+        **base_query,
+        extension=[".nii.gz", ".nii"],
+        space="MNI152NLin2009cAsym",
+        desc="brain",
+        suffix="mask",
+        datatype="anat",
+        return_type="filename",
+        invalid_filters="allow",
+    )
+    if not mask_files and session:
+        # Fallback: search without session filter (e.g., session has no anat/)
+        fallback_query = {"subject": subject}
+        if pvc:
+            fallback_query["pvc"] = pvc
+        mask_files = layout.get(
+            **fallback_query,
+            extension=[".nii.gz", ".nii"],
+            space="MNI152NLin2009cAsym",
+            desc="brain",
+            suffix="mask",
+            datatype="anat",
+            return_type="filename",
+            invalid_filters="allow",
+        )
+    if mask_files:
+        files["anat_brain_mask_mni"] = Path(mask_files[0])
 
     # Find surface PET files (.func.gii extension)
     for hemi, hemi_key in [("L", "lh"), ("R", "rh")]:
@@ -320,6 +351,7 @@ def discover_inputs(
             group.pet_mni = petprep_files["pet_mni"]
             group.pet_fsaverage_lh = petprep_files["pet_fsaverage_lh"]
             group.pet_fsaverage_rh = petprep_files["pet_fsaverage_rh"]
+            group.anat_brain_mask_mni = petprep_files["anat_brain_mask_mni"]
             group.tacs = petprep_files["tacs"]
 
             # Find bloodstream files
