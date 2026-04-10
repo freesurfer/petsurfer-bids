@@ -58,8 +58,8 @@ for more information.
 
 * **Integrated MRI-PET workflow**: registration, motion correction,
   ROI/volume/surface analysis, MRI gradient distortion correction.
-* **Kinetic modeling (KM)**: MRTM1, MRTM2, and invasive Logan modeling,
-  including MA1.
+* **Kinetic modeling (KM)**: MRTM1, MRTM2, invasive Logan modeling
+  (including MA1), and invasive Patlak modeling.
 * **Partial volume correction (PVC)** methods: Symmetric GTM (SGTM), two-compartment (Meltzer),
   three-compartment (Muller-Gartner / MG), and RBV; implementations also account for
   tissue fraction effect (TFE).
@@ -131,6 +131,7 @@ PETsurfer-BIDS currently supports the following kinetic models:
 - MRTM2
 - Logan
 - Logan-MA1
+- Patlak
 
 Multiple models can be executed simultaneously and can be specified using the
 `--km-method` flag.
@@ -174,13 +175,14 @@ using the `--mrtm2-hb` flag (default: `Left-Putamen,Right-Putamen`). For both
 the `--mrtm1-ref` and `--mrtm2-hb` flags, the region names provided should
 correspond to column heading names in the `*_tacs.tsv` outputs from PETPrep.
 
-For Logan and Logan-MA1 modelling, the time to equilibration (t*) must be supplied
-in seconds using the `--tstar` flag.
+For Logan, Logan-MA1, and Patlak modelling, the time to equilibration (t*)
+must be supplied in seconds using the `--tstar` flag.
 
-For Logan and Logan-MA1 modelling, PETsurfer-BIDS also relies on the outputs of
-[bloodstream](https://github.com/mathesong/bloodstream).  The location of the
-bloodstream output directory is by default assumed to be `<bids_dir>/derivatives/bloodstream`,
-however the location can be specified using the `--bloodstream-dir` flag.
+For Logan, Logan-MA1, and Patlak modelling, PETsurfer-BIDS also relies on the
+outputs of [bloodstream](https://github.com/mathesong/bloodstream).  The
+location of the bloodstream output directory is by default assumed to be
+`<bids_dir>/derivatives/bloodstream`, however the location can be specified
+using the `--bloodstream-dir` flag.
 
 The `--pvc` flag selects which partial-volume-corrected output from PETPrep to
 use as input. Its value must match the `--pvc-method` value that was passed to
@@ -204,8 +206,8 @@ alternate temporary folder, use the `--work-dir` flag.
 For each subject/session/kinetic-model combination, the following outputs will
 be generated and placed in the `<output_dir>/sub-<subid>/ses-<sessid>/pet/`
 directory:
-- `*_mimap.[json|nii.gz]`: A molecular imaging map of VT (`meas-VT`; for Logan and Logan-MA1 models)
-or BPND (`meas-BPND`; for MRTM1 or MRTM2 models) in:
+- `*_mimap.[json|nii.gz]`: A molecular imaging map of VT (`meas-VT`; for Logan and Logan-MA1 models),
+BPND (`meas-BPND`; for MRTM1 or MRTM2 models), or Ki (`meas-Ki`; for the Patlak model) in:
   - `MNI152NLin2009cAsym` space
   - `fsaverage` space, left (`hemi-L`) and right (`hemi-R`) hemispheres
 - `*_kinpar.[json|tsv]`: model parameters averaged across the ROIs defined by PETprep
