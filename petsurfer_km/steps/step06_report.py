@@ -644,7 +644,7 @@ def _build_summary_html(
     template_warning: bool,
 ) -> str:
     """Build the summary section HTML."""
-    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1"] if m in args.km_method]
+    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
 
     rows: list[str] = []
 
