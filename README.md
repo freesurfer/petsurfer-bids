@@ -83,31 +83,32 @@ Like all other BIDS apps, PETsurfer-BIDS is intended to be run inside a
 
 The container registry is located [here](https://hub.docker.com/r/freesurfer/petsurfer-bids/tags)
 
-You can pull `v0.1.3` of the container:
+You can pull `v0.2.1` of the container:
 
 **With Docker**:
 ```
-docker pull freesurfer/petsurfer-bids:0.1.3
+docker pull freesurfer/petsurfer-bids:0.2.1
 ```
 
 **With Apptainer**:
 ```
-apptainer pull petsurfer-bids-0.1.3.sif docker://freesurfer/petsurfer-bids:0.1.3
+apptainer pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.1
 ```
 
 **With Singularity CE**:
 ```
-singularity pull petsurfer-bids-0.1.3.sif docker://freesurfer/petsurfer-bids:0.1.3
+singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.1
 ```
 
 When running PETsurfer-BIDS inside a container, you will need to *bind mount*
 relevant input and output paths.  At a minimum, you will need to *bind mount*:
 - The input data directory (`bids_dir`)
 - The output data directory (`output_dir`)
-- The location of the FreeSurfer license file, which should be mounted to
-  `/usr/local/freesurfer/8.1.0-1/.license` inside the container.  If you don't
+- The location of the FreeSurfer license file.  If you don't
   have a FreeSurfer license file, you can apply for and receive one immediately
   [here](https://surfer.nmr.mgh.harvard.edu/registration.html).
+  - You can specify the location of the license file inside the container using
+    the environment variable `FS_LICENSE`
 
 If you would like to preserve the temporary work directory, you can bind mount 
 a directory to that and use `--work-dir` to point to the location inside the
@@ -248,8 +249,9 @@ It assumes:
 apptainer run \
   -B ~/datasets/ds004230:/data/input:ro \
   -B ~/datasets/petsurfer-bids/ds004230:/data/output \
-  -B ~/freesurfer/license.txt:/usr/local/freesurfer/8.1.0-1/.license:ro \
-  ~/containers/petsurfer-bids-0.1.3.sif \
+  -B ~/freesurfer/license.txt:/license.txt:ro \
+  -e FS_LICENSE=/license.txt \
+  ~/containers/petsurfer-bids-0.2.1.sif \
     petsurfer-km /data/input /data/output participant \
       --km-method logan-ma1 \
       --tstar 540 \
@@ -261,7 +263,7 @@ TODO
 
 ## Development
 
-- Setup a [FreeSurfer 8.1.0+ environment](https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall)
+- Setup a [FreeSurfer 8.2.0+ environment](https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall)
 - Setup a python 3.8+ environment.  For example, using [miniforge](https://conda-forge.org/download/)
 
 ```
