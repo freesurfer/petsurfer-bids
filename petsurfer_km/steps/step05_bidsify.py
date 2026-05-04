@@ -26,6 +26,7 @@ MODEL_LABELS = {
     "mrtm2": "MRTM2",
     "logan": "Logan",
     "logan-ma1": "MA1",
+    "patlak": "Patlak",
 }
 
 # Primary measurement per method
@@ -34,6 +35,16 @@ MEAS_LABELS = {
     "mrtm2": "BPND",
     "logan": "VT",
     "logan-ma1": "VT",
+    "patlak": "Ki",
+}
+
+# FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+MAP_FILES = {
+    "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
+    "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
+    "logan": ("vt.nii.gz", "vt.dat"),
+    "logan-ma1": ("vt.nii.gz", "vt.dat"),
+    "patlak": ("Ki.nii.gz", "Ki.dat"),
 }
 
 # Hemisphere mapping: internal (lh/rh) → BIDS (L/R)
@@ -74,8 +85,7 @@ def run_bidsify(
     for method in args.km_method:
         model = MODEL_LABELS[method]
         meas = MEAS_LABELS[method]
-        map_file = "bp.nii.gz" if meas == "BPND" else "vt.nii.gz"
-        roi_file = "gamma.table.dat" if meas == "BPND" else "vt.dat"
+        map_file, roi_file = MAP_FILES[method]
         sidecar = _build_sidecar(method, inputs, temps, args)
 
         # Volumetric parametric map (MNI152)
@@ -229,8 +239,8 @@ def _build_sidecar(
             sidecar["InputValues"] = [k2prime_val]
             sidecar["InputValuesLabels"] = ["k2prime"]
 
-    # Logan methods: tstar and blood type
-    if method in ("logan", "logan-ma1"):
+    # Invasive graphical methods (Logan, Patlak): tstar and blood type
+    if method in ("logan", "logan-ma1", "patlak"):
         sidecar["Tstar"] = args.tstar
         sidecar["BloodType"] = "arterial"
 

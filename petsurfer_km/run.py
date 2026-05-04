@@ -81,12 +81,12 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
             )
         return
 
-    # Check that tstar is provided for Logan methods
-    logan_methods = {"logan", "logan-ma1"}
-    selected_logan = logan_methods.intersection(args.km_method)
-    if selected_logan and args.tstar is None:
+    # Check that tstar is provided for invasive methods (Logan, Patlak)
+    invasive_methods = {"logan", "logan-ma1", "patlak"}
+    selected_invasive = invasive_methods.intersection(args.km_method)
+    if selected_invasive and args.tstar is None:
         parser.error(
-            f"--tstar is required when using {', '.join(sorted(selected_logan))} method(s)"
+            f"--tstar is required when using {', '.join(sorted(selected_invasive))} method(s)"
         )
 
     # Cannot disable both volumetric and surface analysis
@@ -95,15 +95,15 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
             "Cannot disable both volumetric (--no-vol) and surface (--no-surf) analysis"
         )
 
-    # Check bloodstream-dir exists for Logan methods (uses arterial input function)
-    if selected_logan:
+    # Check bloodstream-dir exists for invasive methods (use arterial input function)
+    if selected_invasive:
         bloodstream_dir = args.bloodstream_dir
         if bloodstream_dir is None:
             bloodstream_dir = args.bids_dir / "derivatives" / "bloodstream"
         if not bloodstream_dir.exists():
             parser.error(
                 f"bloodstream-dir does not exist: {bloodstream_dir}\n"
-                f"Logan methods require arterial input function data from bloodstream."
+                f"Logan and Patlak methods require arterial input function data from bloodstream."
             )
 
     # Check petprep-dir exists
@@ -316,9 +316,9 @@ def run(args: argparse.Namespace) -> int:
     if args.analysis_level == "group":
         return run_group(args)
 
-    # Determine if input function is required (for Logan methods)
-    logan_methods = {"logan", "logan-ma1"}
-    require_input_function = bool(logan_methods.intersection(args.km_method))
+    # Determine if input function is required (for invasive methods: Logan, Patlak)
+    invasive_methods = {"logan", "logan-ma1", "patlak"}
+    require_input_function = bool(invasive_methods.intersection(args.km_method))
 
     # Discover input files
     input_groups = discover_inputs(

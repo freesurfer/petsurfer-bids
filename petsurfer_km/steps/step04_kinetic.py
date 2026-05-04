@@ -14,7 +14,7 @@ logger = logging.getLogger("petsurfer_km")
 # Canonical order for kinetic modeling methods.
 # MRTM2 must run after MRTM1 (depends on k2prime output).
 # This order is enforced regardless of the order specified on command line.
-KM_METHOD_ORDER = ["mrtm1", "mrtm2", "logan", "logan-ma1"]
+KM_METHOD_ORDER = ["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"]
 
 
 def run_kinetic_modeling(
@@ -29,9 +29,10 @@ def run_kinetic_modeling(
     """
     Run kinetic modeling for all requested methods.
 
-    Methods are executed in canonical order (mrtm1, mrtm2, logan, logan-ma1)
-    regardless of the order specified on the command line. This ensures
-    dependencies are satisfied (e.g., MRTM2 requires MRTM1's k2prime output).
+    Methods are executed in canonical order (mrtm1, mrtm2, logan, logan-ma1,
+    patlak) regardless of the order specified on the command line. This
+    ensures dependencies are satisfied (e.g., MRTM2 requires MRTM1's k2prime
+    output).
 
     Args:
         subject: Subject ID (without 'sub-' prefix).
@@ -72,6 +73,8 @@ def run_kinetic_modeling(
             _run_logan(subject, session, inputs, temps, workdir, command_history, args)
         elif method == "logan-ma1":
             _run_logan_ma1(subject, session, inputs, temps, workdir, command_history, args)
+        elif method == "patlak":
+            _run_patlak(subject, session, inputs, temps, workdir, command_history, args)
 
 
 def _extract_reference_tac(
@@ -497,7 +500,7 @@ def _run_mrtm_surface(
     logger.debug(f"{method.upper()} {hemi} surface fitting complete: {output_dir}")
 
 
-def _run_logan_roi(
+def _run_invasive_roi(
     method: str,
     aif: Path,
     tstar: float,
@@ -506,11 +509,15 @@ def _run_logan_roi(
     command_history: list[tuple[str, str]],
 ) -> None:
     """
-    Run Logan ROI-level fitting.
+    Run an invasive (AIF-based) graphical-analysis ROI-level fit.
+
+    Used by Logan, Logan-MA1, and Patlak. ``method`` is passed straight to
+    mri_glmfit as ``--<method>``; all three accept the same
+    ``<aif> <frametime> <tstar>`` argument signature.
 
     Operation 7.1.
 
-    Command: mri_glmfit --table <roi_tacs> --logan <aif> <frametime> <tstar> --o <output_dir> --nii.gz
+    Command: mri_glmfit --table <roi_tacs> --<method> <aif> <frametime> <tstar> --o <output_dir> --nii.gz
 
     Adds to temps:
         <method>_roi_dir: Path to <method>.roi/ output directory
@@ -539,7 +546,7 @@ def _run_logan_roi(
     logger.debug(f"{method.upper()} ROI fitting complete: {output_dir}")
 
 
-def _run_logan_volume(
+def _run_invasive_volume(
     method: str,
     aif: Path,
     tstar: float,
@@ -549,11 +556,13 @@ def _run_logan_volume(
     args: Namespace,
 ) -> None:
     """
-    Run Logan MNI volume fitting.
+    Run an invasive (AIF-based) graphical-analysis MNI volume fit.
+
+    Used by Logan, Logan-MA1, and Patlak.
 
     Operation 7.2.
 
-    Command: mri_glmfit --y <smoothed_vol> --logan <aif> <frametime> <tstar> --mask <mask> --o <output_dir> --nii.gz
+    Command: mri_glmfit --y <smoothed_vol> --<method> <aif> <frametime> <tstar> --mask <mask> --o <output_dir> --nii.gz
 
     Adds to temps:
         <method>_mni_dir: Path to <method>.mni.sm<NN>/ output directory
@@ -584,7 +593,7 @@ def _run_logan_volume(
     logger.debug(f"{method.upper()} MNI volume fitting complete: {output_dir}")
 
 
-def _run_logan_surface(
+def _run_invasive_surface(
     method: str,
     hemi: str,
     aif: Path,
@@ -595,11 +604,13 @@ def _run_logan_surface(
     args: Namespace,
 ) -> None:
     """
-    Run Logan surface fitting for one hemisphere.
+    Run an invasive (AIF-based) graphical-analysis surface fit for one hemisphere.
+
+    Used by Logan, Logan-MA1, and Patlak.
 
     Operation 7.3.
 
-    Command: mri_glmfit --y <smoothed_surf> --surf fsaverage <hemi> --logan <aif> <frametime> <tstar> --o <output_dir> --nii.gz
+    Command: mri_glmfit --y <smoothed_surf> --surf fsaverage <hemi> --<method> <aif> <frametime> <tstar> --o <output_dir> --nii.gz
 
     Adds to temps:
         <method>_surf_<hemi>_dir: Path to <method>.fsaverage.<hemi>.sm<NN>/ output directory
@@ -660,7 +671,7 @@ def _run_logan(
     aif = inputs.input_function
 
     # Operation 7.1: ROI-level fitting
-    _run_logan_roi(
+    _run_invasive_roi(
         method="logan",
         aif=aif,
         tstar=args.tstar,
@@ -671,7 +682,7 @@ def _run_logan(
 
     # Operation 7.2: MNI volume fitting
     if not args.no_vol and inputs.has_volumetric():
-        _run_logan_volume(
+        _run_invasive_volume(
             method="logan",
             aif=aif,
             tstar=args.tstar,
@@ -685,7 +696,7 @@ def _run_logan(
     if not args.no_surf and inputs.has_surface():
         for hemi in args.hemispheres:
             if inputs.has_surface(hemi):
-                _run_logan_surface(
+                _run_invasive_surface(
                     method="logan",
                     hemi=hemi,
                     aif=aif,
@@ -729,7 +740,7 @@ def _run_logan_ma1(
     aif = inputs.input_function
 
     # Operation 7.1: ROI-level fitting
-    _run_logan_roi(
+    _run_invasive_roi(
         method="logan-ma1",
         aif=aif,
         tstar=args.tstar,
@@ -740,7 +751,7 @@ def _run_logan_ma1(
 
     # Operation 7.2: MNI volume fitting
     if not args.no_vol and inputs.has_volumetric():
-        _run_logan_volume(
+        _run_invasive_volume(
             method="logan-ma1",
             aif=aif,
             tstar=args.tstar,
@@ -754,8 +765,77 @@ def _run_logan_ma1(
     if not args.no_surf and inputs.has_surface():
         for hemi in args.hemispheres:
             if inputs.has_surface(hemi):
-                _run_logan_surface(
+                _run_invasive_surface(
                     method="logan-ma1",
+                    hemi=hemi,
+                    aif=aif,
+                    tstar=args.tstar,
+                    temps=temps,
+                    workdir=workdir,
+                    command_history=command_history,
+                    args=args,
+                )
+
+
+def _run_patlak(
+    subject: str,
+    session: str | None,
+    inputs: InputGroup,
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+) -> None:
+    """
+    Run Patlak graphical analysis.
+
+    Implements:
+    - Operation 7.1: ROI-level fitting
+    - Operation 7.2: MNI volume fitting (if not --no-vol)
+    - Operation 7.3: Surface fitting (if not --no-surf)
+
+    Requires arterial input function from bloodstream. mri_glmfit's --patlak
+    accepts the same ``<aif> <frametime> <tstar>`` signature as --logan, so
+    the same generic invasive-fit helpers are reused.
+
+    Adds to temps:
+        patlak_roi_dir: Path to patlak.roi/ output directory
+        patlak_mni_dir: Path to patlak.mni.sm<NN>/ output directory (if volumetric)
+        patlak_surf_<hemi>_dir: Path to patlak.fsaverage.<hemi>.sm<NN>/ (if surface)
+    """
+    if not inputs.has_input_function():
+        raise RuntimeError("Patlak requires arterial input function")
+
+    aif = inputs.input_function
+
+    # Operation 7.1: ROI-level fitting
+    _run_invasive_roi(
+        method="patlak",
+        aif=aif,
+        tstar=args.tstar,
+        temps=temps,
+        workdir=workdir,
+        command_history=command_history,
+    )
+
+    # Operation 7.2: MNI volume fitting
+    if not args.no_vol and inputs.has_volumetric():
+        _run_invasive_volume(
+            method="patlak",
+            aif=aif,
+            tstar=args.tstar,
+            temps=temps,
+            workdir=workdir,
+            command_history=command_history,
+            args=args,
+        )
+
+    # Operation 7.3: Surface fitting
+    if not args.no_surf and inputs.has_surface():
+        for hemi in args.hemispheres:
+            if inputs.has_surface(hemi):
+                _run_invasive_surface(
+                    method="patlak",
                     hemi=hemi,
                     aif=aif,
                     tstar=args.tstar,

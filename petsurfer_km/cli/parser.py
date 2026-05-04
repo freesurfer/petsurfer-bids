@@ -49,8 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="petsurfer-km",
         description=(
             "BIDS App for PET kinetic modeling using FreeSurfer's PetSurfer tools. "
-            "Performs reference tissue modeling (MRTM1, MRTM2) and Logan graphical "
-            "analysis on PET data preprocessed with petprep."
+            "Performs reference tissue modeling (MRTM1, MRTM2), Logan graphical "
+            "analysis, and Patlak graphical analysis on PET data preprocessed "
+            "with petprep."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
@@ -58,6 +59,7 @@ Examples:
   petsurfer-km /data/bids /data/output participant --km-method mrtm1
   petsurfer-km /data/bids /data/output participant --km-method mrtm1 mrtm2
   petsurfer-km /data/bids /data/output participant --km-method logan --tstar 30
+  petsurfer-km /data/bids /data/output participant --km-method patlak --tstar 540
   petsurfer-km /data/bids /data/output participant --participant-label sub-01 sub-02
 """,
     )
@@ -84,13 +86,13 @@ Examples:
     km_group.add_argument(
         "--km-method",
         nargs="+",
-        choices=["mrtm1", "mrtm2", "logan", "logan-ma1"],
+        choices=["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"],
         default=["mrtm1"],
         help=(
             "Kinetic modeling method(s) to run. Multiple methods can be specified. "
-            "Methods are always executed in order: mrtm1, mrtm2, logan, logan-ma1. "
-            "Note: mrtm2 requires mrtm1 output; specifying mrtm2 automatically "
-            "includes mrtm1. Default: mrtm1"
+            "Methods are always executed in order: mrtm1, mrtm2, logan, logan-ma1, "
+            "patlak. Note: mrtm2 requires mrtm1 output; specifying mrtm2 "
+            "automatically includes mrtm1. Default: mrtm1"
         ),
     )
     km_group.add_argument(
@@ -98,8 +100,8 @@ Examples:
         type=positive_float,
         metavar="SECONDS",
         help=(
-            "Time to equilibration (t*) in seconds for Logan graphical analysis. "
-            "Required when using logan or logan-ma1 methods."
+            "Time to equilibration (t*) in seconds for Logan and Patlak graphical "
+            "analysis. Required when using logan, logan-ma1, or patlak methods."
         ),
     )
     km_group.add_argument(

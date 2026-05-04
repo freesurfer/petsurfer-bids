@@ -37,6 +37,7 @@ MODEL_LABELS = {
     "mrtm2": "MRTM2",
     "logan": "Logan",
     "logan-ma1": "MA1",
+    "patlak": "Patlak",
 }
 
 MEAS_LABELS = {
@@ -44,6 +45,16 @@ MEAS_LABELS = {
     "mrtm2": "BPND",
     "logan": "VT",
     "logan-ma1": "VT",
+    "patlak": "Ki",
+}
+
+# FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+MAP_FILES = {
+    "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
+    "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
+    "logan": ("vt.nii.gz", "vt.dat"),
+    "logan-ma1": ("vt.nii.gz", "vt.dat"),
+    "patlak": ("Ki.nii.gz", "Ki.dat"),
 }
 
 HEMI_BIDS = {"lh": "L", "rh": "R"}
@@ -187,12 +198,12 @@ def run_report(
 
     # Generate figures and collect paths (relative to output_dir)
     figure_sections: list[str] = []
-    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1"] if m in args.km_method]
+    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
 
     for method in methods_run:
         model = MODEL_LABELS[method]
         meas = MEAS_LABELS[method]
-        map_file = "bp.nii.gz" if meas == "BPND" else "vt.nii.gz"
+        map_file, _ = MAP_FILES[method]
 
         method_figures: list[str] = []
 
@@ -304,7 +315,7 @@ def run_report(
         model = MODEL_LABELS[method]
         roi_key = f"{method}_roi_dir"
         if roi_key in temps:
-            roi_file = "gamma.table.dat" if meas == "BPND" else "vt.dat"
+            _, roi_file = MAP_FILES[method]
             roi_path = temps[roi_key] / roi_file
             if roi_path.exists():
                 table_html = _build_roi_table_html(roi_path, meas)
@@ -633,7 +644,7 @@ def _build_summary_html(
     template_warning: bool,
 ) -> str:
     """Build the summary section HTML."""
-    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1"] if m in args.km_method]
+    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
 
     rows: list[str] = []
 

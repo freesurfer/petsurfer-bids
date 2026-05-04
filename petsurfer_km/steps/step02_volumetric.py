@@ -51,68 +51,36 @@ def run_volumetric(
 
     logger.info(f"Running volumetric processing for {inputs.label}")
 
-    # Compute mean PET volume
-    _compute_mean_volume(inputs.pet_mni, workdir, temps, command_history)
-
-    # Create brain mask
-    _create_brain_mask(temps["mni_mean"], workdir, temps, command_history)
+    # Resample petprep anat brain mask to match PET volume geometry
+    if inputs.anat_brain_mask_mni is None:
+        raise RuntimeError(
+            f"No anat brain mask found in petprep output for {inputs.label}"
+        )
+    _create_brain_mask(inputs.anat_brain_mask_mni, inputs.pet_mni, workdir, temps, command_history)
 
     # Smooth MNI volume
     _smooth_volume(inputs.pet_mni, temps["mni_mask"], workdir, temps, command_history, args.vol_fwhm)
 
 
-def _compute_mean_volume(
-    mni_pet: Path,
-    workdir: Path,
-    temps: dict[str, Path],
-    command_history: list[tuple[str, str]],
-) -> None:
-    """
-    Compute temporal mean across all PET frames.
-
-    Command: mri_concat <mni_pet> --mean --o <output>
-    Output: mni152.mean.nii.gz
-
-    Adds to temps:
-        mni_mean: Path to mni152.mean.nii.gz
-    """
-    output_file = workdir / "mni152.mean.nii.gz"
-
-    cmd = [
-        "mri_concat",
-        str(mni_pet),
-        "--mean",
-        "--o", str(output_file),
-    ]
-
-    result = run_command(cmd, "Compute mean PET volume")
-    command_history.append((result.command, "Compute mean PET volume"))
-
-    if result.exit_code != 0:
-        raise RuntimeError(
-            f"Failed to compute mean volume: {result.stderr}"
-        )
-
-    if not output_file.exists():
-        raise RuntimeError(
-            f"Mean volume not created: {output_file}"
-        )
-
-    temps["mni_mean"] = output_file
-    logger.debug(f"Mean volume computed: {output_file}")
-
-
 def _create_brain_mask(
-    mean_volume: Path,
+    brain_mask_src: Path,
+    pet_mni: Path,
     workdir: Path,
     temps: dict[str, Path],
     command_history: list[tuple[str, str]],
 ) -> None:
     """
-    Create binary brain mask from mean PET volume.
+    Resample the petprep anat brain mask to match the PET volume geometry.
 
-    Command: mri_binarize --i <mean_vol> --min 1e-9 --o <output>
-    Output: mni152.mask.nii.gz
+    Uses mri_convert --like to resample the petprep anat brain mask so its
+    dimensions match the MNI-space PET volume.
+
+    Args:
+        brain_mask_src: Path to petprep brain mask in MNI space.
+        pet_mni: Path to MNI-space PET volume (used as geometry reference).
+        workdir: Working directory for this subject/session.
+        temps: Dict to store paths to temporary/intermediate files.
+        command_history: List to append (description, command) tuples.
 
     Adds to temps:
         mni_mask: Path to mni152.mask.nii.gz
@@ -120,18 +88,18 @@ def _create_brain_mask(
     output_file = workdir / "mni152.mask.nii.gz"
 
     cmd = [
-        "mri_binarize",
-        "--i", str(mean_volume),
-        "--min", "1e-9",
-        "--o", str(output_file),
+        "mri_convert",
+        str(brain_mask_src),
+        str(output_file),
+        "--like", str(pet_mni),
     ]
 
-    result = run_command(cmd, "Create brain mask")
-    command_history.append((result.command, "Create brain mask"))
+    result = run_command(cmd, "Resample petprep anat brain mask to PET geometry")
+    command_history.append((result.command, "Resample petprep anat brain mask to PET geometry"))
 
     if result.exit_code != 0:
         raise RuntimeError(
-            f"Failed to create brain mask: {result.stderr}"
+            f"Failed to resample brain mask: {result.stderr}"
         )
 
     if not output_file.exists():
@@ -140,7 +108,7 @@ def _create_brain_mask(
         )
 
     temps["mni_mask"] = output_file
-    logger.debug(f"Brain mask created: {output_file}")
+    logger.debug(f"Brain mask resampled from petprep: {output_file}")
 
 
 def _smooth_volume(
