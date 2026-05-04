@@ -150,8 +150,15 @@ def _find_petprep_files(
     base_query = {"subject": subject}
     if session:
         base_query["session"] = session
-    if pvc:
-        base_query["pvc"] = pvc
+
+    def _matches_pvc(path: str) -> bool:
+        """Check if a filename has a matching pvc entity (case-insensitive)."""
+        if not pvc:
+            return True
+        match = re.search(r"_pvc-([a-zA-Z0-9]+)", Path(path).name)
+        if not match:
+            return False
+        return match.group(1).lower() == pvc.lower()
 
     files = {
         "pet_mni": None,
@@ -170,6 +177,7 @@ def _find_petprep_files(
         return_type="filename",
         invalid_filters="allow",
     )
+    mni_files = [path for path in mni_files if _matches_pvc(path)]
     if mni_files:
         files["pet_mni"] = Path(mni_files[0])
 
@@ -184,6 +192,7 @@ def _find_petprep_files(
             return_type="filename",
             invalid_filters="allow",
         )
+        fsaverage = [path for path in fsaverage if _matches_pvc(path)]
         if fsaverage:
             files[f"pet_fsaverage_{hemi_key}"] = Path(fsaverage[0])
 
@@ -191,14 +200,13 @@ def _find_petprep_files(
     tacs_query = {"subject": subject, "extension": ".tsv"}
     if session:
         tacs_query["session"] = session
-    if pvc:
-        tacs_query["pvc"] = pvc
     tacs_files = layout.get(
         **tacs_query,
         suffix="tacs",
         return_type="filename",
         invalid_filters="allow",
     )
+    tacs_files = [path for path in tacs_files if _matches_pvc(path)]
     if tacs_files:
         files["tacs"] = Path(tacs_files[0])
 
