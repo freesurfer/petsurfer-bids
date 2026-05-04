@@ -55,7 +55,20 @@ def run_kinetic_modeling(
     # Extract reference region TAC if MRTM methods are requested
     mrtm_methods = {"mrtm1", "mrtm2"}
     if mrtm_methods.intersection(methods_to_run):
-        _extract_reference_tac(inputs.tacs, workdir, temps, command_history, args.mrtm1_ref)
+        if args.mrtm1_ref_label:
+            if inputs.ref_tacs is None:
+                raise RuntimeError(
+                    f"--mrtm1-ref-label '{args.mrtm1_ref_label}' specified but "
+                    f"label TAC file not found in petprep dir for {inputs.label}"
+                )
+            _extract_reference_tac(
+                inputs.ref_tacs, workdir, temps, command_history,
+                [args.mrtm1_ref_label],
+            )
+        else:
+            _extract_reference_tac(
+                inputs.tacs, workdir, temps, command_history, args.mrtm1_ref,
+            )
 
     # MRTM2 k2prime estimation (if MRTM2 requested)
     if "mrtm2" in methods_to_run:

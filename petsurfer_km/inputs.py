@@ -27,6 +27,7 @@ class InputGroup:
     pet_fsaverage_rh: Path | None = None  # Surface PET, right hemisphere
     anat_brain_mask_mni: Path | None = None  # Brain mask in MNI space (from petprep anat)
     tacs: Path | None = None  # Tissue activity curves (GTM)
+    ref_tacs: Path | None = None  # Single-region reference TAC from petprep --ref-mask-name
 
     # Bloodstream outputs
     input_function: Path | None = None  # Arterial input function
@@ -146,6 +147,7 @@ def _find_petprep_files(
     subject: str,
     session: str | None,
     pvc: str | None = None,
+    ref_label: str | None = None,
 ) -> dict:
     """Find PETPrep output files for a subject/session."""
     base_query = {"subject": subject}
@@ -167,6 +169,7 @@ def _find_petprep_files(
         "pet_fsaverage_rh": None,
         "anat_brain_mask_mni": None,
         "tacs": None,
+        "ref_tacs": None,
     }
 
     # Find volumetric PET in MNI space
@@ -241,6 +244,20 @@ def _find_petprep_files(
     if tacs_files:
         files["tacs"] = Path(tacs_files[0])
 
+    # Find single-region reference TAC produced by `petprep --ref-mask-name <ref_label>`.
+    # Discovered via glob rather than pybids: derivative `label` entity on tacs files
+    # is not part of standard BIDSLayout config and parses inconsistently.
+    if ref_label:
+        pet_dir = Path(layout.root) / f"sub-{subject}"
+        if session:
+            pet_dir = pet_dir / f"ses-{session}"
+        pet_dir = pet_dir / "pet"
+        matches = sorted(
+            pet_dir.glob(f"sub-{subject}*_label-{ref_label}_desc-preproc_tacs.tsv")
+        )
+        if matches:
+            files["ref_tacs"] = matches[0]
+
     return files
 
 
@@ -271,6 +288,7 @@ def discover_inputs(
     require_input_function: bool = False,
     pvc: str | None = None,
     bids_dir: Path | None = None,
+    ref_label: str | None = None,
 ) -> list[InputGroup]:
     """
     Discover and group input files from petprep and bloodstream derivatives.
@@ -355,12 +373,15 @@ def discover_inputs(
                 group.tracer = _extract_tracer(bids_dir, subject, session)
 
             # Find petprep files
-            petprep_files = _find_petprep_files(petprep_layout, subject, session, pvc)
+            petprep_files = _find_petprep_files(
+                petprep_layout, subject, session, pvc, ref_label
+            )
             group.pet_mni = petprep_files["pet_mni"]
             group.pet_fsaverage_lh = petprep_files["pet_fsaverage_lh"]
             group.pet_fsaverage_rh = petprep_files["pet_fsaverage_rh"]
             group.anat_brain_mask_mni = petprep_files["anat_brain_mask_mni"]
             group.tacs = petprep_files["tacs"]
+            group.ref_tacs = petprep_files["ref_tacs"]
 
             # Find bloodstream files
             if bloodstream_layout:
@@ -378,6 +399,8 @@ def discover_inputs(
                 group.missing.append("surface PET (fsaverage, right hemisphere)")
             if require_input_function and not group.input_function:
                 group.missing.append("arterial input function")
+            if ref_label and not group.ref_tacs:
+                group.missing.append(f"reference label TAC (label-{ref_label})")
 
             # Log status
             if group.is_valid(require_input_function=require_input_function):
@@ -389,6 +412,8 @@ def discover_inputs(
                     logger.info(f"  Input function: {group.input_function}")
                 if group.tacs:
                     logger.info(f"  TACs: {group.tacs}")
+                if group.ref_tacs:
+                    logger.info(f"  Reference label TAC: {group.ref_tacs}")
                 groups.append(group)
             else:
                 if group.missing:

@@ -230,7 +230,11 @@ def _build_sidecar(
 
     # MRTM methods: reference region
     if method in ("mrtm1", "mrtm2"):
-        sidecar["ReferenceRegion"] = args.mrtm1_ref
+        if args.mrtm1_ref_label:
+            sidecar["ReferenceRegion"] = [args.mrtm1_ref_label]
+            sidecar["ReferenceMaskLabel"] = args.mrtm1_ref_label
+        else:
+            sidecar["ReferenceRegion"] = args.mrtm1_ref
 
     # MRTM2: k2prime input value
     if method == "mrtm2" and "k2prime" in temps:
