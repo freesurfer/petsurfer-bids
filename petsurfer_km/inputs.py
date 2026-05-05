@@ -400,7 +400,9 @@ def discover_inputs(
             if require_input_function and not group.input_function:
                 group.missing.append("arterial input function")
             if ref_label and not group.ref_tacs:
-                group.missing.append(f"reference label TAC (label-{ref_label})")
+                group.missing.append(
+                    f"reference label TAC (--ref-roi-label {ref_label})"
+                )
 
             # Log status
             if group.is_valid(require_input_function=require_input_function):

@@ -8,13 +8,9 @@ from pathlib import Path
 
 from petsurfer_km.execution import run_command
 from petsurfer_km.inputs import InputGroup
+from petsurfer_km.methods import KM_METHOD_ORDER
 
 logger = logging.getLogger("petsurfer_km")
-
-# Canonical order for kinetic modeling methods.
-# MRTM2 must run after MRTM1 (depends on k2prime output).
-# This order is enforced regardless of the order specified on command line.
-KM_METHOD_ORDER = ["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"]
 
 
 def run_kinetic_modeling(
@@ -52,22 +48,22 @@ def run_kinetic_modeling(
     methods_to_run = [m for m in KM_METHOD_ORDER if m in args.km_method]
     logger.debug(f"Methods to run (in order): {methods_to_run}")
 
-    # Extract reference region TAC if MRTM methods are requested
-    mrtm_methods = {"mrtm1", "mrtm2"}
-    if mrtm_methods.intersection(methods_to_run):
-        if args.mrtm1_ref_label:
+    # Extract reference region TAC if any reference-region method is requested
+    ref_methods = {"suvr", "mrtm1", "mrtm2"}
+    if ref_methods.intersection(methods_to_run):
+        if args.ref_roi_label:
             if inputs.ref_tacs is None:
                 raise RuntimeError(
-                    f"--mrtm1-ref-label '{args.mrtm1_ref_label}' specified but "
+                    f"--ref-roi-label '{args.ref_roi_label}' specified but "
                     f"label TAC file not found in petprep dir for {inputs.label}"
                 )
             _extract_reference_tac(
                 inputs.ref_tacs, workdir, temps, command_history,
-                [args.mrtm1_ref_label],
+                [args.ref_roi_label],
             )
         else:
             _extract_reference_tac(
-                inputs.tacs, workdir, temps, command_history, args.mrtm1_ref,
+                inputs.tacs, workdir, temps, command_history, args.ref_roi,
             )
 
     # MRTM2 k2prime estimation (if MRTM2 requested)
@@ -78,7 +74,9 @@ def run_kinetic_modeling(
     for method in methods_to_run:
         logger.info(f"Running {method} for {inputs.label}")
 
-        if method == "mrtm1":
+        if method == "suvr":
+            _run_suvr(subject, session, inputs, temps, workdir, command_history, args)
+        elif method == "mrtm1":
             _run_mrtm1(subject, session, inputs, temps, workdir, command_history, args)
         elif method == "mrtm2":
             _run_mrtm2(subject, session, inputs, temps, workdir, command_history, args)
@@ -511,6 +509,173 @@ def _run_mrtm_surface(
 
     temps[f"{method}_surf_{hemi}_dir"] = output_dir
     logger.debug(f"{method.upper()} {hemi} surface fitting complete: {output_dir}")
+
+
+def _extract_ref_value_at_frame(
+    temps: dict[str, Path],
+    frame_idx: int,
+) -> float:
+    """
+    Read the scalar reference-TAC value at ``frame_idx`` from ref-tac-petsurfer.dat.
+
+    The petsurfer ref-tac file is one float per line, no header (see
+    tsv2petsurfer.py with --roiavg). Stores the value in ``temps["suvr_ref_value"]``.
+    """
+    ref_tac_file = temps["ref_tac"]
+    with open(ref_tac_file) as f:
+        values = [float(line.strip()) for line in f if line.strip()]
+
+    if frame_idx < 0 or frame_idx >= len(values):
+        raise RuntimeError(
+            f"--suvr-frame {frame_idx} out of range; "
+            f"reference TAC has {len(values)} frames (valid 0..{len(values) - 1})"
+        )
+
+    value = values[frame_idx]
+    temps["suvr_ref_value"] = value
+    logger.debug(f"Reference value at frame {frame_idx}: {value}")
+    return value
+
+
+def _run_suvr(
+    subject: str,
+    session: str | None,
+    inputs: InputGroup,
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+) -> None:
+    """
+    Compute SUVR maps from a single PET frame divided by the reference-TAC
+    value at the same frame. Inputs are the already-smoothed PET volumes
+    produced by step02/step03, so --vol-fwhm / --surf-fwhm are honored.
+    """
+    ref_value = _extract_ref_value_at_frame(temps, args.suvr_frame)
+
+    if not args.no_vol and inputs.has_volumetric():
+        _run_suvr_volume(temps, workdir, command_history, args, ref_value)
+
+    if not args.no_surf and inputs.has_surface():
+        for hemi in args.hemispheres:
+            if inputs.has_surface(hemi):
+                _run_suvr_surface(hemi, temps, workdir, command_history, args, ref_value)
+
+
+def _run_suvr_volume(
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+    ref_value: float,
+) -> None:
+    """
+    SUVR volumetric pipeline:
+      1. mri_convert --frame N <smoothed_4d> <frame3d>
+      2. fscalc <frame3d> div <ref_value> --o <suvr_unmasked>
+      3. mri_mask <suvr_unmasked> <mni_mask> <suvr.nii.gz>
+
+    Adds to temps:
+        suvr_mni_dir: Path to suvr.mni.sm<NN>/ output directory
+    """
+    fwhm_str = f"{int(args.vol_fwhm):02d}"
+    output_dir = workdir / f"suvr.mni.sm{fwhm_str}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    frame3d = output_dir / "frame.nii.gz"
+    suvr_unmasked = output_dir / "suvr_unmasked.nii.gz"
+    suvr = output_dir / "suvr.nii.gz"
+
+    # Step 1: extract single frame
+    cmd = [
+        "mri_convert",
+        "--frame", str(args.suvr_frame),
+        str(temps["mni_smoothed"]),
+        str(frame3d),
+    ]
+    description = f"Extract frame {args.suvr_frame} from MNI volume for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not frame3d.exists():
+        raise RuntimeError(f"Failed to extract SUVR frame: {result.stderr}")
+
+    # Step 2: divide by reference value
+    cmd = [
+        "fscalc",
+        str(frame3d), "div", str(ref_value),
+        "--o", str(suvr_unmasked),
+    ]
+    description = f"Divide MNI frame by reference value ({ref_value:g}) for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not suvr_unmasked.exists():
+        raise RuntimeError(f"Failed to compute SUVR (fscalc div): {result.stderr}")
+
+    # Step 3: mask
+    cmd = [
+        "mri_mask",
+        str(suvr_unmasked),
+        str(temps["mni_mask"]),
+        str(suvr),
+    ]
+    description = "Mask SUVR map with MNI brain mask"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not suvr.exists():
+        raise RuntimeError(f"Failed to mask SUVR map: {result.stderr}")
+
+    temps["suvr_mni_dir"] = output_dir
+    logger.debug(f"SUVR MNI volume complete: {output_dir}")
+
+
+def _run_suvr_surface(
+    hemi: str,
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+    ref_value: float,
+) -> None:
+    """
+    SUVR surface pipeline (no masking step):
+      1. mri_convert --frame N <smoothed_surf> <frame3d>
+      2. fscalc <frame3d> div <ref_value> --o <suvr.nii.gz>
+
+    Adds to temps:
+        suvr_surf_<hemi>_dir: Path to suvr.fsaverage.<hemi>.sm<NN>/ output directory
+    """
+    fwhm_str = f"{int(args.surf_fwhm):02d}"
+    output_dir = workdir / f"suvr.fsaverage.{hemi}.sm{fwhm_str}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    frame3d = output_dir / "frame.nii.gz"
+    suvr = output_dir / "suvr.nii.gz"
+
+    cmd = [
+        "mri_convert",
+        "--frame", str(args.suvr_frame),
+        str(temps[f"surf_smoothed_{hemi}"]),
+        str(frame3d),
+    ]
+    description = f"Extract frame {args.suvr_frame} from {hemi} surface for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not frame3d.exists():
+        raise RuntimeError(f"Failed to extract SUVR {hemi} surface frame: {result.stderr}")
+
+    cmd = [
+        "fscalc",
+        str(frame3d), "div", str(ref_value),
+        "--o", str(suvr),
+    ]
+    description = f"Divide {hemi} surface frame by reference value ({ref_value:g}) for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not suvr.exists():
+        raise RuntimeError(f"Failed to compute SUVR on {hemi} surface: {result.stderr}")
+
+    temps[f"suvr_surf_{hemi}_dir"] = output_dir
+    logger.debug(f"SUVR {hemi} surface complete: {output_dir}")
 
 
 def _run_invasive_roi(

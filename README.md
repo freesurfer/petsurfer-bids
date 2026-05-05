@@ -87,17 +87,17 @@ You can pull `v0.2.1` of the container:
 
 **With Docker**:
 ```
-docker pull freesurfer/petsurfer-bids:0.2.1
+docker pull freesurfer/petsurfer-bids:0.2.3
 ```
 
 **With Apptainer**:
 ```
-apptainer pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.1
+apptainer pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
 ```
 
 **With Singularity CE**:
 ```
-singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.1
+singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
 ```
 
 When running PETsurfer-BIDS inside a container, you will need to *bind mount*
@@ -128,6 +128,7 @@ instructions.
 PETprep data that has been run using `--output-spaces MNI152NLin2009cAsym fsaverage`.
 
 PETsurfer-BIDS currently supports the following kinetic models:
+- SUVR
 - MRTM1
 - MRTM2
 - Logan
@@ -141,7 +142,7 @@ MRTM2 relies on the rate constant of the reference region (`k2prime`) estimated
 in MRTM1. Specifying MRTM2 automatically includes MRTM1.
 
 For each kinetic model specified, the following analyses will be performed:
-- ROI based
+- ROI based (except for SUVR)
 - Volumetric (voxel) based
 - Surface based
 
@@ -168,25 +169,23 @@ The location of the PETPrep output directory is by default assumed to be
 `<bids_dir>/derivatives/petprep`, however the location can be specified using the
 `--petprep-dir` flag.
 
-For MRTM1 modelling, a comma separated list of reference regions can be
-specified using the `--mrtm1-ref` flag
-(default: `Left-Cerebellum-Cortex,Right-Cerebellum-Cortex`). For MRTM2
-modelling, a comma separated list of high-binding regions can be specified
-using the `--mrtm2-hb` flag (default: `Left-Putamen,Right-Putamen`). For both
-the `--mrtm1-ref` and `--mrtm2-hb` flags, the region names provided should
-correspond to column heading names in the `*_tacs.tsv` outputs from PETPrep.
-
-Additionally, one can specify a [custom reference region from the output of
+For SUVR and MRTM1 modelling, a comma separated list of reference regions can be
+specified using the `--ref-roi` flag
+(default: `Left-Cerebellum-Cortex,Right-Cerebellum-Cortex`). Alternatively, one 
+can specify a [custom reference region from the output of
 petprep](https://petprep.readthedocs.io/en/latest/usage.html#reference-region-masks)
-(e.g. `semiovale`) to use as the reference region for mrtm1 modelling.
-The `--mrtm1-ref-label <labelname>` flag will search the petprep directory for
-tacs matching the following format:
+(e.g. `semiovale`) to use as the reference region for SUVR and MRTM1 modelling.
+The `--ref-roi-label <labelname>` flag will search the petprep directory for
+tacs matching the following format to use as the input for the reference region:
 
 ```
 sub-<subname>_ses-<sesname>_label-<labelname>_desc-preproc_tacs.tsv
 ```
 
-and use this as the input for the reference region.
+For MRTM2 modelling, a comma separated list of high-binding regions can be
+specified using the `--mrtm2-hb` flag (default: `Left-Putamen,Right-Putamen`).
+For both the `--ref-roi` and `--mrtm2-hb` flags, the region names provided should
+correspond to column heading names in the `*_tacs.tsv` outputs from PETPrep.
 
 For Logan, Logan-MA1, and Patlak modelling, the time to equilibration (t*)
 must be supplied in seconds using the `--tstar` flag.

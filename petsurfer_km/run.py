@@ -320,6 +320,11 @@ def run(args: argparse.Namespace) -> int:
     invasive_methods = {"logan", "logan-ma1", "patlak"}
     require_input_function = bool(invasive_methods.intersection(args.km_method))
 
+    # SUVR requires --suvr-frame
+    if "suvr" in args.km_method and args.suvr_frame is None:
+        logger.error("--suvr-frame is required when --km-method includes suvr")
+        return 1
+
     # Discover input files
     input_groups = discover_inputs(
         petprep_dir=args.petprep_dir,
@@ -329,7 +334,7 @@ def run(args: argparse.Namespace) -> int:
         require_input_function=require_input_function,
         pvc=args.pvc,
         bids_dir=args.bids_dir,
-        ref_label=args.mrtm1_ref_label,
+        ref_label=args.ref_roi_label,
     )
 
     if not input_groups:
