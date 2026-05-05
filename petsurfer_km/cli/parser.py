@@ -60,6 +60,7 @@ Examples:
   petsurfer-km /data/bids /data/output participant --km-method mrtm1 mrtm2
   petsurfer-km /data/bids /data/output participant --km-method logan --tstar 30
   petsurfer-km /data/bids /data/output participant --km-method patlak --tstar 540
+  petsurfer-km /data/bids /data/output participant --km-method suvr --suvr-frame 5 --ref-roi-label semiovale
   petsurfer-km /data/bids /data/output participant --participant-label sub-01 sub-02
 """,
     )
@@ -86,13 +87,15 @@ Examples:
     km_group.add_argument(
         "--km-method",
         nargs="+",
-        choices=["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"],
+        choices=["suvr", "mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"],
         default=["mrtm1"],
         help=(
             "Kinetic modeling method(s) to run. Multiple methods can be specified. "
-            "Methods are always executed in order: mrtm1, mrtm2, logan, logan-ma1, "
-            "patlak. Note: mrtm2 requires mrtm1 output; specifying mrtm2 "
-            "automatically includes mrtm1. Default: mrtm1"
+            "Methods are always executed in order: suvr, mrtm1, mrtm2, logan, "
+            "logan-ma1, patlak. Note: mrtm2 requires mrtm1 output; specifying "
+            "mrtm2 automatically includes mrtm1. SUVR is not strictly a kinetic "
+            "model but produces voxel-/surface-wise SUVR maps using the same "
+            "reference region. Default: mrtm1"
         ),
     )
     km_group.add_argument(
@@ -104,20 +107,31 @@ Examples:
             "analysis. Required when using logan, logan-ma1, or patlak methods."
         ),
     )
-    mrtm1_ref_group = km_group.add_mutually_exclusive_group()
-    mrtm1_ref_group.add_argument(
-        "--mrtm1-ref",
+    km_group.add_argument(
+        "--suvr-frame",
+        type=int,
+        metavar="INDEX",
+        help=(
+            "0-indexed frame number from the (smoothed) PET 4D used to compute "
+            "SUVR. Required when --km-method includes suvr."
+        ),
+    )
+    ref_roi_group = km_group.add_mutually_exclusive_group()
+    ref_roi_group.add_argument(
+        "--ref-roi", "--mrtm1-ref",
+        dest="ref_roi",
         type=comma_separated_list,
         default=["Left-Cerebellum-Cortex", "Right-Cerebellum-Cortex"],
         metavar="REGIONS",
         help=(
-            "Comma-separated list of reference regions for MRTM1, averaged "
-            "from the GTM tacs.tsv. "
+            "Comma-separated list of reference regions, averaged from the GTM "
+            "tacs.tsv. Used for MRTM1, MRTM2, and SUVR. "
             "Default: Left-Cerebellum-Cortex,Right-Cerebellum-Cortex"
         ),
     )
-    mrtm1_ref_group.add_argument(
-        "--mrtm1-ref-label",
+    ref_roi_group.add_argument(
+        "--ref-roi-label", "--mrtm1-ref-label",
+        dest="ref_roi_label",
         metavar="LABEL",
         help=(
             "BIDS label-<LABEL> entity of a petprep-emitted single-region "
@@ -125,7 +139,7 @@ Examples:
             "`petprep --ref-mask-name semiovale`). The corresponding "
             "sub-<subj>[_ses-<sess>]_label-<LABEL>_desc-preproc_tacs.tsv "
             "in the petprep directory will be used as the reference TAC. "
-            "Mutually exclusive with --mrtm1-ref."
+            "Used for MRTM1, MRTM2, and SUVR. Mutually exclusive with --ref-roi."
         ),
     )
     km_group.add_argument(

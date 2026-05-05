@@ -33,6 +33,7 @@ logger = logging.getLogger("petsurfer_km")
 # ---------------------------------------------------------------------------
 
 MODEL_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "MRTM1",
     "mrtm2": "MRTM2",
     "logan": "Logan",
@@ -41,6 +42,7 @@ MODEL_LABELS = {
 }
 
 MEAS_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "BPND",
     "mrtm2": "BPND",
     "logan": "VT",
@@ -49,7 +51,9 @@ MEAS_LABELS = {
 }
 
 # FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+# SUVR has no ROI output.
 MAP_FILES = {
+    "suvr": ("suvr.nii.gz", None),
     "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
     "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
     "logan": ("vt.nii.gz", "vt.dat"),
@@ -198,7 +202,7 @@ def run_report(
 
     # Generate figures and collect paths (relative to output_dir)
     figure_sections: list[str] = []
-    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
+    methods_run = [m for m in ["suvr", "mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
 
     for method in methods_run:
         model = MODEL_LABELS[method]
@@ -314,8 +318,8 @@ def run_report(
         meas = MEAS_LABELS[method]
         model = MODEL_LABELS[method]
         roi_key = f"{method}_roi_dir"
-        if roi_key in temps:
-            _, roi_file = MAP_FILES[method]
+        _, roi_file = MAP_FILES[method]
+        if roi_key in temps and roi_file is not None:
             roi_path = temps[roi_key] / roi_file
             if roi_path.exists():
                 table_html = _build_roi_table_html(roi_path, meas)
@@ -644,7 +648,7 @@ def _build_summary_html(
     template_warning: bool,
 ) -> str:
     """Build the summary section HTML."""
-    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
+    methods_run = [m for m in ["suvr", "mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
 
     rows: list[str] = []
 
@@ -658,12 +662,31 @@ def _build_summary_html(
         _row("Tracer", inputs.tracer)
     _row("Methods", ", ".join(MODEL_LABELS[m] for m in methods_run))
 
-    # Reference region (MRTM methods)
-    if any(m in ("mrtm1", "mrtm2") for m in methods_run):
-        if args.mrtm1_ref_label:
-            _row("Reference label", args.mrtm1_ref_label)
+    # Reference region (MRTM and SUVR methods)
+    if any(m in ("suvr", "mrtm1", "mrtm2") for m in methods_run):
+        if args.ref_roi_label:
+            _row("Reference label", args.ref_roi_label)
         else:
-            _row("Reference region(s)", ", ".join(args.mrtm1_ref))
+            _row("Reference region(s)", ", ".join(args.ref_roi))
+
+    # SUVR frame (annotate with frame_start/frame_end from the source TSV if possible)
+    if "suvr" in methods_run:
+        frame_label = str(args.suvr_frame)
+        tacs_src = inputs.ref_tacs or inputs.tacs
+        if tacs_src is not None:
+            try:
+                with open(tacs_src) as f:
+                    header = f.readline().strip().split("\t")
+                    fs_idx = header.index("frame_start")
+                    fe_idx = header.index("frame_end")
+                    data_rows = [line.strip().split("\t") for line in f if line.strip()]
+                if 0 <= args.suvr_frame < len(data_rows):
+                    row = data_rows[args.suvr_frame]
+                    start, end = row[fs_idx], row[fe_idx]
+                    frame_label = f"{args.suvr_frame} (t = {start}–{end} s)"
+            except (OSError, ValueError, IndexError):
+                pass
+        _row("SUVR frame", frame_label)
 
     # High-binding region (MRTM2)
     if "mrtm2" in methods_run:

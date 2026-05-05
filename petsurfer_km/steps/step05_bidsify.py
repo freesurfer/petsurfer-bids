@@ -22,6 +22,7 @@ logger = logging.getLogger("petsurfer_km")
 
 # BEP023 model labels
 MODEL_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "MRTM1",
     "mrtm2": "MRTM2",
     "logan": "Logan",
@@ -31,6 +32,7 @@ MODEL_LABELS = {
 
 # Primary measurement per method
 MEAS_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "BPND",
     "mrtm2": "BPND",
     "logan": "VT",
@@ -39,7 +41,9 @@ MEAS_LABELS = {
 }
 
 # FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+# SUVR has no ROI output.
 MAP_FILES = {
+    "suvr": ("suvr.nii.gz", None),
     "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
     "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
     "logan": ("vt.nii.gz", "vt.dat"),
@@ -131,7 +135,7 @@ def run_bidsify(
 
         # ROI kinetic parameters (tabular)
         roi_key = f"{method}_roi_dir"
-        if roi_key in temps:
+        if roi_key in temps and roi_file is not None:
             name = f"{prefix}_model-{model}_kinpar"
             src_dat = temps[roi_key] / roi_file
             dst_tsv = output_pet_dir / f"{name}.tsv"
@@ -228,13 +232,17 @@ def _build_sidecar(
         "SoftwareVersion": __version__,
     }
 
-    # MRTM methods: reference region
-    if method in ("mrtm1", "mrtm2"):
-        if args.mrtm1_ref_label:
-            sidecar["ReferenceRegion"] = [args.mrtm1_ref_label]
-            sidecar["ReferenceMaskLabel"] = args.mrtm1_ref_label
+    # Reference-region methods: ReferenceRegion / ReferenceMaskLabel
+    if method in ("suvr", "mrtm1", "mrtm2"):
+        if args.ref_roi_label:
+            sidecar["ReferenceRegion"] = [args.ref_roi_label]
+            sidecar["ReferenceMaskLabel"] = args.ref_roi_label
         else:
-            sidecar["ReferenceRegion"] = args.mrtm1_ref
+            sidecar["ReferenceRegion"] = args.ref_roi
+
+    # SUVR: frame index used
+    if method == "suvr":
+        sidecar["SUVRFrameIndex"] = args.suvr_frame
 
     # MRTM2: k2prime input value
     if method == "mrtm2" and "k2prime" in temps:
