@@ -104,14 +104,28 @@ Examples:
             "analysis. Required when using logan, logan-ma1, or patlak methods."
         ),
     )
-    km_group.add_argument(
+    mrtm1_ref_group = km_group.add_mutually_exclusive_group()
+    mrtm1_ref_group.add_argument(
         "--mrtm1-ref",
         type=comma_separated_list,
         default=["Left-Cerebellum-Cortex", "Right-Cerebellum-Cortex"],
         metavar="REGIONS",
         help=(
-            "Comma-separated list of reference regions for MRTM1. "
+            "Comma-separated list of reference regions for MRTM1, averaged "
+            "from the GTM tacs.tsv. "
             "Default: Left-Cerebellum-Cortex,Right-Cerebellum-Cortex"
+        ),
+    )
+    mrtm1_ref_group.add_argument(
+        "--mrtm1-ref-label",
+        metavar="LABEL",
+        help=(
+            "BIDS label-<LABEL> entity of a petprep-emitted single-region "
+            "reference TAC (e.g. 'semiovale' from "
+            "`petprep --ref-mask-name semiovale`). The corresponding "
+            "sub-<subj>[_ses-<sess>]_label-<LABEL>_desc-preproc_tacs.tsv "
+            "in the petprep directory will be used as the reference TAC. "
+            "Mutually exclusive with --mrtm1-ref."
         ),
     )
     km_group.add_argument(

@@ -660,7 +660,10 @@ def _build_summary_html(
 
     # Reference region (MRTM methods)
     if any(m in ("mrtm1", "mrtm2") for m in methods_run):
-        _row("Reference region(s)", ", ".join(args.mrtm1_ref))
+        if args.mrtm1_ref_label:
+            _row("Reference label", args.mrtm1_ref_label)
+        else:
+            _row("Reference region(s)", ", ".join(args.mrtm1_ref))
 
     # High-binding region (MRTM2)
     if "mrtm2" in methods_run:

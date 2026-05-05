@@ -176,6 +176,18 @@ using the `--mrtm2-hb` flag (default: `Left-Putamen,Right-Putamen`). For both
 the `--mrtm1-ref` and `--mrtm2-hb` flags, the region names provided should
 correspond to column heading names in the `*_tacs.tsv` outputs from PETPrep.
 
+Additionally, one can specify a [custom reference region from the output of
+petprep](https://petprep.readthedocs.io/en/latest/usage.html#reference-region-masks)
+(e.g. `semiovale`) to use as the reference region for mrtm1 modelling.
+The `--mrtm1-ref-label <labelname>` flag will search the petprep directory for
+tacs matching the following format:
+
+```
+sub-<subname>_ses-<sesname>_label-<labelname>_desc-preproc_tacs.tsv
+```
+
+and use this as the input for the reference region.
+
 For Logan, Logan-MA1, and Patlak modelling, the time to equilibration (t*)
 must be supplied in seconds using the `--tstar` flag.
 
