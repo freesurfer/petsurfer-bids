@@ -25,6 +25,7 @@ from pathlib import Path
 
 from petsurfer_km import __version__
 from petsurfer_km.inputs import InputGroup
+from petsurfer_km.methods import KM_METHOD_ORDER
 
 logger = logging.getLogger("petsurfer_km")
 
@@ -202,7 +203,7 @@ def run_report(
 
     # Generate figures and collect paths (relative to output_dir)
     figure_sections: list[str] = []
-    methods_run = [m for m in ["suvr", "mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
+    methods_run = [m for m in KM_METHOD_ORDER if m in args.km_method]
 
     for method in methods_run:
         model = MODEL_LABELS[method]
@@ -648,7 +649,7 @@ def _build_summary_html(
     template_warning: bool,
 ) -> str:
     """Build the summary section HTML."""
-    methods_run = [m for m in ["suvr", "mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"] if m in args.km_method]
+    methods_run = [m for m in KM_METHOD_ORDER if m in args.km_method]
 
     rows: list[str] = []
 

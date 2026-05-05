@@ -8,14 +8,9 @@ from pathlib import Path
 
 from petsurfer_km.execution import run_command
 from petsurfer_km.inputs import InputGroup
+from petsurfer_km.methods import KM_METHOD_ORDER
 
 logger = logging.getLogger("petsurfer_km")
-
-# Canonical order for kinetic modeling methods.
-# MRTM2 must run after MRTM1 (depends on k2prime output).
-# SUVR runs first; it has no dependencies on other methods.
-# This order is enforced regardless of the order specified on command line.
-KM_METHOD_ORDER = ["suvr", "mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"]
 
 
 def run_kinetic_modeling(

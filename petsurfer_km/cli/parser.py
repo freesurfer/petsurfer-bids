@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from petsurfer_km import __version__
+from petsurfer_km.methods import KM_METHOD_ORDER
 
 
 def existing_path(value: str) -> Path:
@@ -87,7 +88,7 @@ Examples:
     km_group.add_argument(
         "--km-method",
         nargs="+",
-        choices=["suvr", "mrtm1", "mrtm2", "logan", "logan-ma1", "patlak"],
+        choices=KM_METHOD_ORDER,
         default=["mrtm1"],
         help=(
             "Kinetic modeling method(s) to run. Multiple methods can be specified. "
