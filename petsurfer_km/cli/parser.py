@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from petsurfer_km import __version__
+from petsurfer_km.methods import KM_METHOD_ORDER
 
 
 def existing_path(value: str) -> Path:
@@ -49,8 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="petsurfer-km",
         description=(
             "BIDS App for PET kinetic modeling using FreeSurfer's PetSurfer tools. "
-            "Performs reference tissue modeling (MRTM1, MRTM2) and Logan graphical "
-            "analysis on PET data preprocessed with petprep."
+            "Performs reference tissue modeling (MRTM1, MRTM2), Logan graphical "
+            "analysis, and Patlak graphical analysis on PET data preprocessed "
+            "with petprep."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
@@ -58,6 +60,8 @@ Examples:
   petsurfer-km /data/bids /data/output participant --km-method mrtm1
   petsurfer-km /data/bids /data/output participant --km-method mrtm1 mrtm2
   petsurfer-km /data/bids /data/output participant --km-method logan --tstar 30
+  petsurfer-km /data/bids /data/output participant --km-method patlak --tstar 540
+  petsurfer-km /data/bids /data/output participant --km-method suvr --suvr-frame 5 --ref-roi-label semiovale
   petsurfer-km /data/bids /data/output participant --participant-label sub-01 sub-02
 """,
     )
@@ -84,13 +88,15 @@ Examples:
     km_group.add_argument(
         "--km-method",
         nargs="+",
-        choices=["mrtm1", "mrtm2", "logan", "logan-ma1"],
+        choices=KM_METHOD_ORDER,
         default=["mrtm1"],
         help=(
             "Kinetic modeling method(s) to run. Multiple methods can be specified. "
-            "Methods are always executed in order: mrtm1, mrtm2, logan, logan-ma1. "
-            "Note: mrtm2 requires mrtm1 output; specifying mrtm2 automatically "
-            "includes mrtm1. Default: mrtm1"
+            "Methods are always executed in order: suvr, mrtm1, mrtm2, logan, "
+            "logan-ma1, patlak. Note: mrtm2 requires mrtm1 output; specifying "
+            "mrtm2 automatically includes mrtm1. SUVR is not strictly a kinetic "
+            "model but produces voxel-/surface-wise SUVR maps using the same "
+            "reference region. Default: mrtm1"
         ),
     )
     km_group.add_argument(
@@ -98,18 +104,43 @@ Examples:
         type=positive_float,
         metavar="SECONDS",
         help=(
-            "Time to equilibration (t*) in seconds for Logan graphical analysis. "
-            "Required when using logan or logan-ma1 methods."
+            "Time to equilibration (t*) in seconds for Logan and Patlak graphical "
+            "analysis. Required when using logan, logan-ma1, or patlak methods."
         ),
     )
     km_group.add_argument(
-        "--mrtm1-ref",
+        "--suvr-frame",
+        type=int,
+        metavar="INDEX",
+        help=(
+            "0-indexed frame number from the (smoothed) PET 4D used to compute "
+            "SUVR. Required when --km-method includes suvr."
+        ),
+    )
+    ref_roi_group = km_group.add_mutually_exclusive_group()
+    ref_roi_group.add_argument(
+        "--ref-roi", "--mrtm1-ref",
+        dest="ref_roi",
         type=comma_separated_list,
         default=["Left-Cerebellum-Cortex", "Right-Cerebellum-Cortex"],
         metavar="REGIONS",
         help=(
-            "Comma-separated list of reference regions for MRTM1. "
+            "Comma-separated list of reference regions, averaged from the GTM "
+            "tacs.tsv. Used for MRTM1, MRTM2, and SUVR. "
             "Default: Left-Cerebellum-Cortex,Right-Cerebellum-Cortex"
+        ),
+    )
+    ref_roi_group.add_argument(
+        "--ref-roi-label", "--mrtm1-ref-label",
+        dest="ref_roi_label",
+        metavar="LABEL",
+        help=(
+            "BIDS label-<LABEL> entity of a petprep-emitted single-region "
+            "reference TAC (e.g. 'semiovale' from "
+            "`petprep --ref-mask-name semiovale`). The corresponding "
+            "sub-<subj>[_ses-<sess>]_label-<LABEL>_desc-preproc_tacs.tsv "
+            "in the petprep directory will be used as the reference TAC. "
+            "Used for MRTM1, MRTM2, and SUVR. Mutually exclusive with --ref-roi."
         ),
     )
     km_group.add_argument(

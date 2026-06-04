@@ -59,8 +59,8 @@ for more information.
 
 * **Integrated MRI-PET workflow**: registration, motion correction,
   ROI/volume/surface analysis, MRI gradient distortion correction.
-* **Kinetic modeling (KM)**: MRTM1, MRTM2, and invasive Logan modeling,
-  including MA, invasive Patlak modeling.
+* **Kinetic modeling (KM)**: MRTM1, MRTM2, invasive Logan modeling,
+  MA, invasive Patlak modeling.
 * **Partial volume correction (PVC)** methods: Symmetric GTM (SGTM), two-compartment (Meltzer),
   three-compartment (Muller-Gartner / MG), and RBV; implementations also account for
   tissue fraction effect (TFE).
@@ -86,31 +86,32 @@ Like all other BIDS apps, PETsurfer-BIDS is intended to be run inside a
 
 The container registry is located [here](https://hub.docker.com/r/freesurfer/petsurfer-bids/tags)
 
-You can pull `v0.1.3` of the container:
+You can pull `v0.2.1` of the container:
 
 **With Docker**:
 ```
-docker pull freesurfer/petsurfer-bids:0.1.3
+docker pull freesurfer/petsurfer-bids:0.2.3
 ```
 
 **With Apptainer**:
 ```
-apptainer pull petsurfer-bids-0.1.3.sif docker://freesurfer/petsurfer-bids:0.1.3
+apptainer pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
 ```
 
 **With Singularity CE**:
 ```
-singularity pull petsurfer-bids-0.1.3.sif docker://freesurfer/petsurfer-bids:0.1.3
+singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
 ```
 
 When running PETsurfer-BIDS inside a container, you will need to *bind mount*
 relevant input and output paths.  At a minimum, you will need to *bind mount*:
 - The input data directory (`bids_dir`)
 - The output data directory (`output_dir`)
-- The location of the FreeSurfer license file, which should be mounted to
-  `/usr/local/freesurfer/8.1.0-1/.license` inside the container.  If you don't
+- The location of the FreeSurfer license file.  If you don't
   have a FreeSurfer license file, you can apply for and receive one immediately
   [here](https://surfer.nmr.mgh.harvard.edu/registration.html).
+  - You can specify the location of the license file inside the container using
+    the environment variable `FS_LICENSE`
 
 If you would like to preserve the temporary work directory, you can bind mount 
 a directory to that and use `--work-dir` to point to the location inside the
@@ -130,6 +131,7 @@ instructions.
 PETprep data that has been run using `--output-spaces MNI152NLin2009cAsym fsaverage`.
 
 PETsurfer-BIDS currently supports the following kinetic models:
+- SUVR
 - MRTM1
 - MRTM2
 - Logan
@@ -142,8 +144,8 @@ Multiple models can be executed simultaneously and can be specified using the
 MRTM2 relies on the rate constant of the reference region (`k2prime`) estimated
 in MRTM1. Specifying MRTM2 automatically includes MRTM1.
 
-For each kinetic model specified, the following analyses can be performed:
-- ROI based
+For each kinetic model specified, the following analyses will be performed:
+- ROI based (except for SUVR)
 - Volumetric (voxel) based
 - Surface (voxel) based
 
@@ -170,21 +172,32 @@ The location of the PETPrep output directory is by default assumed to be
 `<bids_dir>/derivatives/petprep`, however the location can be specified using the
 `--petprep-dir` flag.
 
-For MRTM1 modelling, a comma separated list of reference regions can be
-specified using the `--mrtm1-ref` flag
-(default: `Left-Cerebellum-Cortex,Right-Cerebellum-Cortex`). For MRTM2
-modelling, a comma separated list of high-binding regions can be specified
-using the `--mrtm2-hb` flag (default: `Left-Putamen,Right-Putamen`). For both
-the `--mrtm1-ref` and `--mrtm2-hb` flags, the region names provided should
+For SUVR and MRTM1 modelling, a comma separated list of reference regions can be
+specified using the `--ref-roi` flag
+(default: `Left-Cerebellum-Cortex,Right-Cerebellum-Cortex`). Alternatively, one 
+can specify a [custom reference region from the output of
+petprep](https://petprep.readthedocs.io/en/latest/usage.html#reference-region-masks)
+(e.g. `semiovale`) to use as the reference region for SUVR and MRTM1 modelling.
+The `--ref-roi-label <labelname>` flag will search the petprep directory for
+tacs matching the following format to use as the input for the reference region:
+
+```
+sub-<subname>_ses-<sesname>_label-<labelname>_desc-preproc_tacs.tsv
+```
+
+For MRTM2 modelling, a comma separated list of high-binding regions can be
+specified using the `--mrtm2-hb` flag (default: `Left-Putamen,Right-Putamen`).
+For both the `--ref-roi` and `--mrtm2-hb` flags, the region names provided should
 correspond to column heading names in the `*_tacs.tsv` outputs from PETPrep.
 
-For Logan and Logan-MA1 modelling, the time to equilibration (t*) must be supplied
-in seconds using the `--tstar` flag.
+For Logan, Logan-MA1, and Patlak modelling, the time to equilibration (t*)
+must be supplied in seconds using the `--tstar` flag.
 
-For Logan and Logan-MA1 modelling, PETsurfer-BIDS also relies on the outputs of
-[bloodstream](https://github.com/mathesong/bloodstream).  The location of the
-bloodstream output directory is by default assumed to be `<bids_dir>/derivatives/bloodstream`,
-however the location can be specified using the `--bloodstream-dir` flag.
+For Logan, Logan-MA1, and Patlak modelling, PETsurfer-BIDS also relies on the
+outputs of [bloodstream](https://github.com/mathesong/bloodstream).  The
+location of the bloodstream output directory is by default assumed to be
+`<bids_dir>/derivatives/bloodstream`, however the location can be specified
+using the `--bloodstream-dir` flag.
 
 The `--pvc` flag selects which partial-volume-corrected output from PETPrep to
 use as input. Its value must match the `--pvc-method` value that was passed to
@@ -208,8 +221,8 @@ alternate temporary folder, use the `--work-dir` flag.
 For each subject/session/kinetic-model combination, the following outputs will
 be generated and placed in the `<output_dir>/sub-<subid>/ses-<sessid>/pet/`
 directory:
-- `*_mimap.[json|nii.gz]`: A molecular imaging map of VT (`meas-VT`; for Logan and Logan-MA1 models)
-or BPND (`meas-BPND`; for MRTM1 or MRTM2 models) in:
+- `*_mimap.[json|nii.gz]`: A molecular imaging map of VT (`meas-VT`; for Logan and Logan-MA1 models),
+BPND (`meas-BPND`; for MRTM1 or MRTM2 models), or Ki (`meas-Ki`; for the Patlak model) in:
   - `MNI152NLin2009cAsym` space
   - `fsaverage` space, left (`hemi-L`) and right (`hemi-R`) hemispheres
 - `*_kinpar.[json|tsv]`: model parameters averaged across the ROIs defined by PETprep
@@ -250,8 +263,9 @@ It assumes:
 apptainer run \
   -B ~/datasets/ds004230:/data/input:ro \
   -B ~/datasets/petsurfer-bids/ds004230:/data/output \
-  -B ~/freesurfer/license.txt:/usr/local/freesurfer/8.1.0-1/.license:ro \
-  ~/containers/petsurfer-bids-0.1.3.sif \
+  -B ~/freesurfer/license.txt:/license.txt:ro \
+  -e FS_LICENSE=/license.txt \
+  ~/containers/petsurfer-bids-0.2.1.sif \
     petsurfer-km /data/input /data/output participant \
       --km-method logan-ma1 \
       --tstar 540 \
@@ -263,7 +277,7 @@ TODO
 
 ## Development
 
-- Setup a [FreeSurfer 8.1.0+ environment](https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall)
+- Setup a [FreeSurfer 8.2.0+ environment](https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall)
 - Setup a python 3.8+ environment.  For example, using [miniforge](https://conda-forge.org/download/)
 
 ```
@@ -273,6 +287,8 @@ git clone git@github.com:freesurfer/petsurfer-bids.git
 cd petsurfer-bids
 pip install -e .
 ```
+
+When making changes, please bump the vesion number in [`petsurfer_km/__init__.py`](petsurfer_km/__init__.py)
 
 ## Recommended citation
 

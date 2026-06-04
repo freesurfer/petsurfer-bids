@@ -22,18 +22,33 @@ logger = logging.getLogger("petsurfer_km")
 
 # BEP023 model labels
 MODEL_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "MRTM1",
     "mrtm2": "MRTM2",
     "logan": "Logan",
     "logan-ma1": "MA1",
+    "patlak": "Patlak",
 }
 
 # Primary measurement per method
 MEAS_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "BPND",
     "mrtm2": "BPND",
     "logan": "VT",
     "logan-ma1": "VT",
+    "patlak": "Ki",
+}
+
+# FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+# SUVR has no ROI output.
+MAP_FILES = {
+    "suvr": ("suvr.nii.gz", None),
+    "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
+    "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
+    "logan": ("vt.nii.gz", "vt.dat"),
+    "logan-ma1": ("vt.nii.gz", "vt.dat"),
+    "patlak": ("Ki.nii.gz", "Ki.dat"),
 }
 
 # Hemisphere mapping: internal (lh/rh) → BIDS (L/R)
@@ -74,8 +89,7 @@ def run_bidsify(
     for method in args.km_method:
         model = MODEL_LABELS[method]
         meas = MEAS_LABELS[method]
-        map_file = "bp.nii.gz" if meas == "BPND" else "vt.nii.gz"
-        roi_file = "gamma.table.dat" if meas == "BPND" else "vt.dat"
+        map_file, roi_file = MAP_FILES[method]
         sidecar = _build_sidecar(method, inputs, temps, args)
 
         # Volumetric parametric map (MNI152)
@@ -121,7 +135,7 @@ def run_bidsify(
 
         # ROI kinetic parameters (tabular)
         roi_key = f"{method}_roi_dir"
-        if roi_key in temps:
+        if roi_key in temps and roi_file is not None:
             name = f"{prefix}_model-{model}_kinpar"
             src_dat = temps[roi_key] / roi_file
             dst_tsv = output_pet_dir / f"{name}.tsv"
@@ -218,9 +232,17 @@ def _build_sidecar(
         "SoftwareVersion": __version__,
     }
 
-    # MRTM methods: reference region
-    if method in ("mrtm1", "mrtm2"):
-        sidecar["ReferenceRegion"] = args.mrtm1_ref
+    # Reference-region methods: ReferenceRegion / ReferenceMaskLabel
+    if method in ("suvr", "mrtm1", "mrtm2"):
+        if args.ref_roi_label:
+            sidecar["ReferenceRegion"] = [args.ref_roi_label]
+            sidecar["ReferenceMaskLabel"] = args.ref_roi_label
+        else:
+            sidecar["ReferenceRegion"] = args.ref_roi
+
+    # SUVR: frame index used
+    if method == "suvr":
+        sidecar["SUVRFrameIndex"] = args.suvr_frame
 
     # MRTM2: k2prime input value
     if method == "mrtm2" and "k2prime" in temps:
@@ -229,8 +251,8 @@ def _build_sidecar(
             sidecar["InputValues"] = [k2prime_val]
             sidecar["InputValuesLabels"] = ["k2prime"]
 
-    # Logan methods: tstar and blood type
-    if method in ("logan", "logan-ma1"):
+    # Invasive graphical methods (Logan, Patlak): tstar and blood type
+    if method in ("logan", "logan-ma1", "patlak"):
         sidecar["Tstar"] = args.tstar
         sidecar["BloodType"] = "arterial"
 

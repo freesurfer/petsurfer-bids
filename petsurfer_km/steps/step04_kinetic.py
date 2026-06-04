@@ -8,13 +8,9 @@ from pathlib import Path
 
 from petsurfer_km.execution import run_command
 from petsurfer_km.inputs import InputGroup
+from petsurfer_km.methods import KM_METHOD_ORDER
 
 logger = logging.getLogger("petsurfer_km")
-
-# Canonical order for kinetic modeling methods.
-# MRTM2 must run after MRTM1 (depends on k2prime output).
-# This order is enforced regardless of the order specified on command line.
-KM_METHOD_ORDER = ["mrtm1", "mrtm2", "logan", "logan-ma1"]
 
 
 def run_kinetic_modeling(
@@ -29,9 +25,10 @@ def run_kinetic_modeling(
     """
     Run kinetic modeling for all requested methods.
 
-    Methods are executed in canonical order (mrtm1, mrtm2, logan, logan-ma1)
-    regardless of the order specified on the command line. This ensures
-    dependencies are satisfied (e.g., MRTM2 requires MRTM1's k2prime output).
+    Methods are executed in canonical order (mrtm1, mrtm2, logan, logan-ma1,
+    patlak) regardless of the order specified on the command line. This
+    ensures dependencies are satisfied (e.g., MRTM2 requires MRTM1's k2prime
+    output).
 
     Args:
         subject: Subject ID (without 'sub-' prefix).
@@ -51,10 +48,23 @@ def run_kinetic_modeling(
     methods_to_run = [m for m in KM_METHOD_ORDER if m in args.km_method]
     logger.debug(f"Methods to run (in order): {methods_to_run}")
 
-    # Extract reference region TAC if MRTM methods are requested
-    mrtm_methods = {"mrtm1", "mrtm2"}
-    if mrtm_methods.intersection(methods_to_run):
-        _extract_reference_tac(inputs.tacs, workdir, temps, command_history, args.mrtm1_ref)
+    # Extract reference region TAC if any reference-region method is requested
+    ref_methods = {"suvr", "mrtm1", "mrtm2"}
+    if ref_methods.intersection(methods_to_run):
+        if args.ref_roi_label:
+            if inputs.ref_tacs is None:
+                raise RuntimeError(
+                    f"--ref-roi-label '{args.ref_roi_label}' specified but "
+                    f"label TAC file not found in petprep dir for {inputs.label}"
+                )
+            _extract_reference_tac(
+                inputs.ref_tacs, workdir, temps, command_history,
+                [args.ref_roi_label],
+            )
+        else:
+            _extract_reference_tac(
+                inputs.tacs, workdir, temps, command_history, args.ref_roi,
+            )
 
     # MRTM2 k2prime estimation (if MRTM2 requested)
     if "mrtm2" in methods_to_run:
@@ -64,7 +74,9 @@ def run_kinetic_modeling(
     for method in methods_to_run:
         logger.info(f"Running {method} for {inputs.label}")
 
-        if method == "mrtm1":
+        if method == "suvr":
+            _run_suvr(subject, session, inputs, temps, workdir, command_history, args)
+        elif method == "mrtm1":
             _run_mrtm1(subject, session, inputs, temps, workdir, command_history, args)
         elif method == "mrtm2":
             _run_mrtm2(subject, session, inputs, temps, workdir, command_history, args)
@@ -72,6 +84,8 @@ def run_kinetic_modeling(
             _run_logan(subject, session, inputs, temps, workdir, command_history, args)
         elif method == "logan-ma1":
             _run_logan_ma1(subject, session, inputs, temps, workdir, command_history, args)
+        elif method == "patlak":
+            _run_patlak(subject, session, inputs, temps, workdir, command_history, args)
 
 
 def _extract_reference_tac(
@@ -497,7 +511,174 @@ def _run_mrtm_surface(
     logger.debug(f"{method.upper()} {hemi} surface fitting complete: {output_dir}")
 
 
-def _run_logan_roi(
+def _extract_ref_value_at_frame(
+    temps: dict[str, Path],
+    frame_idx: int,
+) -> float:
+    """
+    Read the scalar reference-TAC value at ``frame_idx`` from ref-tac-petsurfer.dat.
+
+    The petsurfer ref-tac file is one float per line, no header (see
+    tsv2petsurfer.py with --roiavg). Stores the value in ``temps["suvr_ref_value"]``.
+    """
+    ref_tac_file = temps["ref_tac"]
+    with open(ref_tac_file) as f:
+        values = [float(line.strip()) for line in f if line.strip()]
+
+    if frame_idx < 0 or frame_idx >= len(values):
+        raise RuntimeError(
+            f"--suvr-frame {frame_idx} out of range; "
+            f"reference TAC has {len(values)} frames (valid 0..{len(values) - 1})"
+        )
+
+    value = values[frame_idx]
+    temps["suvr_ref_value"] = value
+    logger.debug(f"Reference value at frame {frame_idx}: {value}")
+    return value
+
+
+def _run_suvr(
+    subject: str,
+    session: str | None,
+    inputs: InputGroup,
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+) -> None:
+    """
+    Compute SUVR maps from a single PET frame divided by the reference-TAC
+    value at the same frame. Inputs are the already-smoothed PET volumes
+    produced by step02/step03, so --vol-fwhm / --surf-fwhm are honored.
+    """
+    ref_value = _extract_ref_value_at_frame(temps, args.suvr_frame)
+
+    if not args.no_vol and inputs.has_volumetric():
+        _run_suvr_volume(temps, workdir, command_history, args, ref_value)
+
+    if not args.no_surf and inputs.has_surface():
+        for hemi in args.hemispheres:
+            if inputs.has_surface(hemi):
+                _run_suvr_surface(hemi, temps, workdir, command_history, args, ref_value)
+
+
+def _run_suvr_volume(
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+    ref_value: float,
+) -> None:
+    """
+    SUVR volumetric pipeline:
+      1. mri_convert --frame N <smoothed_4d> <frame3d>
+      2. fscalc <frame3d> div <ref_value> --o <suvr_unmasked>
+      3. mri_mask <suvr_unmasked> <mni_mask> <suvr.nii.gz>
+
+    Adds to temps:
+        suvr_mni_dir: Path to suvr.mni.sm<NN>/ output directory
+    """
+    fwhm_str = f"{int(args.vol_fwhm):02d}"
+    output_dir = workdir / f"suvr.mni.sm{fwhm_str}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    frame3d = output_dir / "frame.nii.gz"
+    suvr_unmasked = output_dir / "suvr_unmasked.nii.gz"
+    suvr = output_dir / "suvr.nii.gz"
+
+    # Step 1: extract single frame
+    cmd = [
+        "mri_convert",
+        "--frame", str(args.suvr_frame),
+        str(temps["mni_smoothed"]),
+        str(frame3d),
+    ]
+    description = f"Extract frame {args.suvr_frame} from MNI volume for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not frame3d.exists():
+        raise RuntimeError(f"Failed to extract SUVR frame: {result.stderr}")
+
+    # Step 2: divide by reference value
+    cmd = [
+        "fscalc",
+        str(frame3d), "div", str(ref_value),
+        "--o", str(suvr_unmasked),
+    ]
+    description = f"Divide MNI frame by reference value ({ref_value:g}) for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not suvr_unmasked.exists():
+        raise RuntimeError(f"Failed to compute SUVR (fscalc div): {result.stderr}")
+
+    # Step 3: mask
+    cmd = [
+        "mri_mask",
+        str(suvr_unmasked),
+        str(temps["mni_mask"]),
+        str(suvr),
+    ]
+    description = "Mask SUVR map with MNI brain mask"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not suvr.exists():
+        raise RuntimeError(f"Failed to mask SUVR map: {result.stderr}")
+
+    temps["suvr_mni_dir"] = output_dir
+    logger.debug(f"SUVR MNI volume complete: {output_dir}")
+
+
+def _run_suvr_surface(
+    hemi: str,
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+    ref_value: float,
+) -> None:
+    """
+    SUVR surface pipeline (no masking step):
+      1. mri_convert --frame N <smoothed_surf> <frame3d>
+      2. fscalc <frame3d> div <ref_value> --o <suvr.nii.gz>
+
+    Adds to temps:
+        suvr_surf_<hemi>_dir: Path to suvr.fsaverage.<hemi>.sm<NN>/ output directory
+    """
+    fwhm_str = f"{int(args.surf_fwhm):02d}"
+    output_dir = workdir / f"suvr.fsaverage.{hemi}.sm{fwhm_str}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    frame3d = output_dir / "frame.nii.gz"
+    suvr = output_dir / "suvr.nii.gz"
+
+    cmd = [
+        "mri_convert",
+        "--frame", str(args.suvr_frame),
+        str(temps[f"surf_smoothed_{hemi}"]),
+        str(frame3d),
+    ]
+    description = f"Extract frame {args.suvr_frame} from {hemi} surface for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not frame3d.exists():
+        raise RuntimeError(f"Failed to extract SUVR {hemi} surface frame: {result.stderr}")
+
+    cmd = [
+        "fscalc",
+        str(frame3d), "div", str(ref_value),
+        "--o", str(suvr),
+    ]
+    description = f"Divide {hemi} surface frame by reference value ({ref_value:g}) for SUVR"
+    result = run_command(cmd, description)
+    command_history.append((result.command, description))
+    if result.exit_code != 0 or not suvr.exists():
+        raise RuntimeError(f"Failed to compute SUVR on {hemi} surface: {result.stderr}")
+
+    temps[f"suvr_surf_{hemi}_dir"] = output_dir
+    logger.debug(f"SUVR {hemi} surface complete: {output_dir}")
+
+
+def _run_invasive_roi(
     method: str,
     aif: Path,
     tstar: float,
@@ -506,11 +687,15 @@ def _run_logan_roi(
     command_history: list[tuple[str, str]],
 ) -> None:
     """
-    Run Logan ROI-level fitting.
+    Run an invasive (AIF-based) graphical-analysis ROI-level fit.
+
+    Used by Logan, Logan-MA1, and Patlak. ``method`` is passed straight to
+    mri_glmfit as ``--<method>``; all three accept the same
+    ``<aif> <frametime> <tstar>`` argument signature.
 
     Operation 7.1.
 
-    Command: mri_glmfit --table <roi_tacs> --logan <aif> <frametime> <tstar> --o <output_dir> --nii.gz
+    Command: mri_glmfit --table <roi_tacs> --<method> <aif> <frametime> <tstar> --o <output_dir> --nii.gz
 
     Adds to temps:
         <method>_roi_dir: Path to <method>.roi/ output directory
@@ -539,7 +724,7 @@ def _run_logan_roi(
     logger.debug(f"{method.upper()} ROI fitting complete: {output_dir}")
 
 
-def _run_logan_volume(
+def _run_invasive_volume(
     method: str,
     aif: Path,
     tstar: float,
@@ -549,11 +734,13 @@ def _run_logan_volume(
     args: Namespace,
 ) -> None:
     """
-    Run Logan MNI volume fitting.
+    Run an invasive (AIF-based) graphical-analysis MNI volume fit.
+
+    Used by Logan, Logan-MA1, and Patlak.
 
     Operation 7.2.
 
-    Command: mri_glmfit --y <smoothed_vol> --logan <aif> <frametime> <tstar> --mask <mask> --o <output_dir> --nii.gz
+    Command: mri_glmfit --y <smoothed_vol> --<method> <aif> <frametime> <tstar> --mask <mask> --o <output_dir> --nii.gz
 
     Adds to temps:
         <method>_mni_dir: Path to <method>.mni.sm<NN>/ output directory
@@ -584,7 +771,7 @@ def _run_logan_volume(
     logger.debug(f"{method.upper()} MNI volume fitting complete: {output_dir}")
 
 
-def _run_logan_surface(
+def _run_invasive_surface(
     method: str,
     hemi: str,
     aif: Path,
@@ -595,11 +782,13 @@ def _run_logan_surface(
     args: Namespace,
 ) -> None:
     """
-    Run Logan surface fitting for one hemisphere.
+    Run an invasive (AIF-based) graphical-analysis surface fit for one hemisphere.
+
+    Used by Logan, Logan-MA1, and Patlak.
 
     Operation 7.3.
 
-    Command: mri_glmfit --y <smoothed_surf> --surf fsaverage <hemi> --logan <aif> <frametime> <tstar> --o <output_dir> --nii.gz
+    Command: mri_glmfit --y <smoothed_surf> --surf fsaverage <hemi> --<method> <aif> <frametime> <tstar> --o <output_dir> --nii.gz
 
     Adds to temps:
         <method>_surf_<hemi>_dir: Path to <method>.fsaverage.<hemi>.sm<NN>/ output directory
@@ -660,7 +849,7 @@ def _run_logan(
     aif = inputs.input_function
 
     # Operation 7.1: ROI-level fitting
-    _run_logan_roi(
+    _run_invasive_roi(
         method="logan",
         aif=aif,
         tstar=args.tstar,
@@ -671,7 +860,7 @@ def _run_logan(
 
     # Operation 7.2: MNI volume fitting
     if not args.no_vol and inputs.has_volumetric():
-        _run_logan_volume(
+        _run_invasive_volume(
             method="logan",
             aif=aif,
             tstar=args.tstar,
@@ -685,7 +874,7 @@ def _run_logan(
     if not args.no_surf and inputs.has_surface():
         for hemi in args.hemispheres:
             if inputs.has_surface(hemi):
-                _run_logan_surface(
+                _run_invasive_surface(
                     method="logan",
                     hemi=hemi,
                     aif=aif,
@@ -729,7 +918,7 @@ def _run_logan_ma1(
     aif = inputs.input_function
 
     # Operation 7.1: ROI-level fitting
-    _run_logan_roi(
+    _run_invasive_roi(
         method="logan-ma1",
         aif=aif,
         tstar=args.tstar,
@@ -740,7 +929,7 @@ def _run_logan_ma1(
 
     # Operation 7.2: MNI volume fitting
     if not args.no_vol and inputs.has_volumetric():
-        _run_logan_volume(
+        _run_invasive_volume(
             method="logan-ma1",
             aif=aif,
             tstar=args.tstar,
@@ -754,8 +943,77 @@ def _run_logan_ma1(
     if not args.no_surf and inputs.has_surface():
         for hemi in args.hemispheres:
             if inputs.has_surface(hemi):
-                _run_logan_surface(
+                _run_invasive_surface(
                     method="logan-ma1",
+                    hemi=hemi,
+                    aif=aif,
+                    tstar=args.tstar,
+                    temps=temps,
+                    workdir=workdir,
+                    command_history=command_history,
+                    args=args,
+                )
+
+
+def _run_patlak(
+    subject: str,
+    session: str | None,
+    inputs: InputGroup,
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+) -> None:
+    """
+    Run Patlak graphical analysis.
+
+    Implements:
+    - Operation 7.1: ROI-level fitting
+    - Operation 7.2: MNI volume fitting (if not --no-vol)
+    - Operation 7.3: Surface fitting (if not --no-surf)
+
+    Requires arterial input function from bloodstream. mri_glmfit's --patlak
+    accepts the same ``<aif> <frametime> <tstar>`` signature as --logan, so
+    the same generic invasive-fit helpers are reused.
+
+    Adds to temps:
+        patlak_roi_dir: Path to patlak.roi/ output directory
+        patlak_mni_dir: Path to patlak.mni.sm<NN>/ output directory (if volumetric)
+        patlak_surf_<hemi>_dir: Path to patlak.fsaverage.<hemi>.sm<NN>/ (if surface)
+    """
+    if not inputs.has_input_function():
+        raise RuntimeError("Patlak requires arterial input function")
+
+    aif = inputs.input_function
+
+    # Operation 7.1: ROI-level fitting
+    _run_invasive_roi(
+        method="patlak",
+        aif=aif,
+        tstar=args.tstar,
+        temps=temps,
+        workdir=workdir,
+        command_history=command_history,
+    )
+
+    # Operation 7.2: MNI volume fitting
+    if not args.no_vol and inputs.has_volumetric():
+        _run_invasive_volume(
+            method="patlak",
+            aif=aif,
+            tstar=args.tstar,
+            temps=temps,
+            workdir=workdir,
+            command_history=command_history,
+            args=args,
+        )
+
+    # Operation 7.3: Surface fitting
+    if not args.no_surf and inputs.has_surface():
+        for hemi in args.hemispheres:
+            if inputs.has_surface(hemi):
+                _run_invasive_surface(
+                    method="patlak",
                     hemi=hemi,
                     aif=aif,
                     tstar=args.tstar,

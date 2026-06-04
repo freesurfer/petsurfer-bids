@@ -25,6 +25,7 @@ from pathlib import Path
 
 from petsurfer_km import __version__
 from petsurfer_km.inputs import InputGroup
+from petsurfer_km.methods import KM_METHOD_ORDER
 
 logger = logging.getLogger("petsurfer_km")
 
@@ -33,17 +34,32 @@ logger = logging.getLogger("petsurfer_km")
 # ---------------------------------------------------------------------------
 
 MODEL_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "MRTM1",
     "mrtm2": "MRTM2",
     "logan": "Logan",
     "logan-ma1": "MA1",
+    "patlak": "Patlak",
 }
 
 MEAS_LABELS = {
+    "suvr": "SUVR",
     "mrtm1": "BPND",
     "mrtm2": "BPND",
     "logan": "VT",
     "logan-ma1": "VT",
+    "patlak": "Ki",
+}
+
+# FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+# SUVR has no ROI output.
+MAP_FILES = {
+    "suvr": ("suvr.nii.gz", None),
+    "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
+    "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
+    "logan": ("vt.nii.gz", "vt.dat"),
+    "logan-ma1": ("vt.nii.gz", "vt.dat"),
+    "patlak": ("Ki.nii.gz", "Ki.dat"),
 }
 
 HEMI_BIDS = {"lh": "L", "rh": "R"}
@@ -187,12 +203,12 @@ def run_report(
 
     # Generate figures and collect paths (relative to output_dir)
     figure_sections: list[str] = []
-    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1"] if m in args.km_method]
+    methods_run = [m for m in KM_METHOD_ORDER if m in args.km_method]
 
     for method in methods_run:
         model = MODEL_LABELS[method]
         meas = MEAS_LABELS[method]
-        map_file = "bp.nii.gz" if meas == "BPND" else "vt.nii.gz"
+        map_file, _ = MAP_FILES[method]
 
         method_figures: list[str] = []
 
@@ -303,8 +319,8 @@ def run_report(
         meas = MEAS_LABELS[method]
         model = MODEL_LABELS[method]
         roi_key = f"{method}_roi_dir"
-        if roi_key in temps:
-            roi_file = "gamma.table.dat" if meas == "BPND" else "vt.dat"
+        _, roi_file = MAP_FILES[method]
+        if roi_key in temps and roi_file is not None:
             roi_path = temps[roi_key] / roi_file
             if roi_path.exists():
                 table_html = _build_roi_table_html(roi_path, meas)
@@ -633,7 +649,7 @@ def _build_summary_html(
     template_warning: bool,
 ) -> str:
     """Build the summary section HTML."""
-    methods_run = [m for m in ["mrtm1", "mrtm2", "logan", "logan-ma1"] if m in args.km_method]
+    methods_run = [m for m in KM_METHOD_ORDER if m in args.km_method]
 
     rows: list[str] = []
 
@@ -647,9 +663,31 @@ def _build_summary_html(
         _row("Tracer", inputs.tracer)
     _row("Methods", ", ".join(MODEL_LABELS[m] for m in methods_run))
 
-    # Reference region (MRTM methods)
-    if any(m in ("mrtm1", "mrtm2") for m in methods_run):
-        _row("Reference region(s)", ", ".join(args.mrtm1_ref))
+    # Reference region (MRTM and SUVR methods)
+    if any(m in ("suvr", "mrtm1", "mrtm2") for m in methods_run):
+        if args.ref_roi_label:
+            _row("Reference label", args.ref_roi_label)
+        else:
+            _row("Reference region(s)", ", ".join(args.ref_roi))
+
+    # SUVR frame (annotate with frame_start/frame_end from the source TSV if possible)
+    if "suvr" in methods_run:
+        frame_label = str(args.suvr_frame)
+        tacs_src = inputs.ref_tacs or inputs.tacs
+        if tacs_src is not None:
+            try:
+                with open(tacs_src) as f:
+                    header = f.readline().strip().split("\t")
+                    fs_idx = header.index("frame_start")
+                    fe_idx = header.index("frame_end")
+                    data_rows = [line.strip().split("\t") for line in f if line.strip()]
+                if 0 <= args.suvr_frame < len(data_rows):
+                    row = data_rows[args.suvr_frame]
+                    start, end = row[fs_idx], row[fe_idx]
+                    frame_label = f"{args.suvr_frame} (t = {start}–{end} s)"
+            except (OSError, ValueError, IndexError):
+                pass
+        _row("SUVR frame", frame_label)
 
     # High-binding region (MRTM2)
     if "mrtm2" in methods_run:

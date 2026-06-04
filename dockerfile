@@ -1,4 +1,4 @@
-FROM freesurfer/freesurfer:8.1.0
+FROM freesurfer/freesurfer:8.2.0
 
 WORKDIR /root
 

@@ -25,7 +25,9 @@ class InputGroup:
     pet_mni: Path | None = None  # Volumetric PET in MNI space
     pet_fsaverage_lh: Path | None = None  # Surface PET, left hemisphere
     pet_fsaverage_rh: Path | None = None  # Surface PET, right hemisphere
+    anat_brain_mask_mni: Path | None = None  # Brain mask in MNI space (from petprep anat)
     tacs: Path | None = None  # Tissue activity curves (GTM)
+    ref_tacs: Path | None = None  # Single-region reference TAC from petprep --ref-mask-name
 
     # Bloodstream outputs
     input_function: Path | None = None  # Arterial input function
@@ -145,19 +147,29 @@ def _find_petprep_files(
     subject: str,
     session: str | None,
     pvc: str | None = None,
+    ref_label: str | None = None,
 ) -> dict:
     """Find PETPrep output files for a subject/session."""
     base_query = {"subject": subject}
     if session:
         base_query["session"] = session
-    if pvc:
-        base_query["pvc"] = pvc
+
+    def _matches_pvc(path: str) -> bool:
+        """Check if a filename has a matching pvc entity (case-insensitive)."""
+        if not pvc:
+            return True
+        match = re.search(r"_pvc-([a-zA-Z0-9]+)", Path(path).name)
+        if not match:
+            return False
+        return match.group(1).lower() == pvc.lower()
 
     files = {
         "pet_mni": None,
         "pet_fsaverage_lh": None,
         "pet_fsaverage_rh": None,
+        "anat_brain_mask_mni": None,
         "tacs": None,
+        "ref_tacs": None,
     }
 
     # Find volumetric PET in MNI space
@@ -170,8 +182,38 @@ def _find_petprep_files(
         return_type="filename",
         invalid_filters="allow",
     )
+    mni_files = [path for path in mni_files if _matches_pvc(path)]
     if mni_files:
         files["pet_mni"] = Path(mni_files[0])
+
+    # Find brain mask in MNI space (from anat datatype)
+    mask_files = layout.get(
+        **base_query,
+        extension=[".nii.gz", ".nii"],
+        space="MNI152NLin2009cAsym",
+        desc="brain",
+        suffix="mask",
+        datatype="anat",
+        return_type="filename",
+        invalid_filters="allow",
+    )
+    if not mask_files and session:
+        # Fallback: search without session filter (e.g., session has no anat/)
+        fallback_query = {"subject": subject}
+        if pvc:
+            fallback_query["pvc"] = pvc
+        mask_files = layout.get(
+            **fallback_query,
+            extension=[".nii.gz", ".nii"],
+            space="MNI152NLin2009cAsym",
+            desc="brain",
+            suffix="mask",
+            datatype="anat",
+            return_type="filename",
+            invalid_filters="allow",
+        )
+    if mask_files:
+        files["anat_brain_mask_mni"] = Path(mask_files[0])
 
     # Find surface PET files (.func.gii extension)
     for hemi, hemi_key in [("L", "lh"), ("R", "rh")]:
@@ -184,6 +226,7 @@ def _find_petprep_files(
             return_type="filename",
             invalid_filters="allow",
         )
+        fsaverage = [path for path in fsaverage if _matches_pvc(path)]
         if fsaverage:
             files[f"pet_fsaverage_{hemi_key}"] = Path(fsaverage[0])
 
@@ -191,16 +234,29 @@ def _find_petprep_files(
     tacs_query = {"subject": subject, "extension": ".tsv"}
     if session:
         tacs_query["session"] = session
-    if pvc:
-        tacs_query["pvc"] = pvc
     tacs_files = layout.get(
         **tacs_query,
         suffix="tacs",
         return_type="filename",
         invalid_filters="allow",
     )
+    tacs_files = [path for path in tacs_files if _matches_pvc(path)]
     if tacs_files:
         files["tacs"] = Path(tacs_files[0])
+
+    # Find single-region reference TAC produced by `petprep --ref-mask-name <ref_label>`.
+    # Discovered via glob rather than pybids: derivative `label` entity on tacs files
+    # is not part of standard BIDSLayout config and parses inconsistently.
+    if ref_label:
+        pet_dir = Path(layout.root) / f"sub-{subject}"
+        if session:
+            pet_dir = pet_dir / f"ses-{session}"
+        pet_dir = pet_dir / "pet"
+        matches = sorted(
+            pet_dir.glob(f"sub-{subject}*_label-{ref_label}_desc-preproc_tacs.tsv")
+        )
+        if matches:
+            files["ref_tacs"] = matches[0]
 
     return files
 
@@ -232,6 +288,7 @@ def discover_inputs(
     require_input_function: bool = False,
     pvc: str | None = None,
     bids_dir: Path | None = None,
+    ref_label: str | None = None,
 ) -> list[InputGroup]:
     """
     Discover and group input files from petprep and bloodstream derivatives.
@@ -316,11 +373,15 @@ def discover_inputs(
                 group.tracer = _extract_tracer(bids_dir, subject, session)
 
             # Find petprep files
-            petprep_files = _find_petprep_files(petprep_layout, subject, session, pvc)
+            petprep_files = _find_petprep_files(
+                petprep_layout, subject, session, pvc, ref_label
+            )
             group.pet_mni = petprep_files["pet_mni"]
             group.pet_fsaverage_lh = petprep_files["pet_fsaverage_lh"]
             group.pet_fsaverage_rh = petprep_files["pet_fsaverage_rh"]
+            group.anat_brain_mask_mni = petprep_files["anat_brain_mask_mni"]
             group.tacs = petprep_files["tacs"]
+            group.ref_tacs = petprep_files["ref_tacs"]
 
             # Find bloodstream files
             if bloodstream_layout:
@@ -338,6 +399,10 @@ def discover_inputs(
                 group.missing.append("surface PET (fsaverage, right hemisphere)")
             if require_input_function and not group.input_function:
                 group.missing.append("arterial input function")
+            if ref_label and not group.ref_tacs:
+                group.missing.append(
+                    f"reference label TAC (--ref-roi-label {ref_label})"
+                )
 
             # Log status
             if group.is_valid(require_input_function=require_input_function):
@@ -349,6 +414,8 @@ def discover_inputs(
                     logger.info(f"  Input function: {group.input_function}")
                 if group.tacs:
                     logger.info(f"  TACs: {group.tacs}")
+                if group.ref_tacs:
+                    logger.info(f"  Reference label TAC: {group.ref_tacs}")
                 groups.append(group)
             else:
                 if group.missing:
