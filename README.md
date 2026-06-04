@@ -41,10 +41,11 @@ PETsurfer-BIDS is a BIDS app that builds upon the outputs of
 [PETPrep](https://github.com/nipreps/petprep) and
 [bloodstream](https://github.com/mathesong/bloodstream). 
 
-PETsurfer functionality is divided between petsurfer-bids and PETPrep. PETPrep runs the
-pre-processing aspects (MC, PET-MRI registration, PVC, sampling to
-template spaces) whereas petsurfer-bids runs voxel-wise smoothing,
-kinetic modeling, and group analysis. If the kinetic modeling is
+PETsurfer functionality is divided between petsurfer-bids and
+PETPrep. PETPrep runs the pre-processing aspects (MC, PET-MRI
+registration, PVC, sampling to template spaces) whereas petsurfer-bids
+runs voxel-wise smoothing, kinetic modeling, group analysis, and
+correction for multple comparisons. If the kinetic modeling is
 invasive, then bloodstream can be run to create the arterial input
 function (AIF) used by PETsurfer kinetic modeling. The ultimate goal
 of this project is to allow users to put their PET data into BIDS
@@ -59,7 +60,7 @@ for more information.
 * **Integrated MRI-PET workflow**: registration, motion correction,
   ROI/volume/surface analysis, MRI gradient distortion correction.
 * **Kinetic modeling (KM)**: MRTM1, MRTM2, and invasive Logan modeling,
-  including MA1.
+  including MA, invasive Patlak modeling.
 * **Partial volume correction (PVC)** methods: Symmetric GTM (SGTM), two-compartment (Meltzer),
   three-compartment (Muller-Gartner / MG), and RBV; implementations also account for
   tissue fraction effect (TFE).
@@ -68,8 +69,10 @@ for more information.
 
 ## Usage
 
-PETsurfer-BIDS can perform both participant-level analyses and group-level
-analyses.  It is invoked via `petsurfer-km` and conforms to the BIDS app interface.
+PETsurfer-BIDS can perform both participant-level analyses and
+group-level analyses.  After running PETprep and (if needed)
+bloodstream, petsurfer-bids can be invoked via BIDS-app-conforming
+command-line interface:
 
 ```
 petsurfer-km bids_dir output_dir {participant,group}
@@ -131,6 +134,7 @@ PETsurfer-BIDS currently supports the following kinetic models:
 - MRTM2
 - Logan
 - Logan-MA1
+- Patlak
 
 Multiple models can be executed simultaneously and can be specified using the
 `--km-method` flag.
@@ -138,10 +142,10 @@ Multiple models can be executed simultaneously and can be specified using the
 MRTM2 relies on the rate constant of the reference region (`k2prime`) estimated
 in MRTM1. Specifying MRTM2 automatically includes MRTM1.
 
-For each kinetic model specified, the following analyses will be performed:
+For each kinetic model specified, the following analyses can be performed:
 - ROI based
 - Volumetric (voxel) based
-- Surface based
+- Surface (voxel) based
 
 The volumetic analysis can be disabled by specifying `--no-vol`.  The surface
 based analysis can be disabled by specifying `--no-surf`.  The flags `--lh` and
