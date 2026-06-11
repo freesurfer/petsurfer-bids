@@ -264,7 +264,8 @@ apptainer run \
   -B ~/datasets/ds004230:/data/input:ro \
   -B ~/datasets/petsurfer-bids/ds004230:/data/output \
   -B ~/freesurfer/license.txt:/license.txt:ro \
-  -e FS_LICENSE=/license.txt \
+  --env FS_LICENSE=/license.txt \
+  --pwd /data/output \
   ~/containers/petsurfer-bids-0.2.1.sif \
     petsurfer-km /data/input /data/output participant \
       --km-method logan-ma1 \
