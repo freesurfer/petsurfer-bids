@@ -255,19 +255,21 @@ It assumes:
 - PETPrep has been run on this dataset with `--output-spaces MNI152NLin2009cAsym fsaverage`
   and the output is located at `~/datasets/petprep/ds004230`
 - bloodstream has been run on this dataset and the output is located at `~/datasets/bloodstream/ds004230`
-- A FreeSurfer license file is located at `~/freesurfer/license.txt`
+- FreeSurfer is installed in $FREESURFER_HOME and there is a valid license file there
 - The time to equilibration (t*) is 540 seconds
 
 ```
 petsurfer-km ~/datasets/ds004230 ~/datasets/petsurfer-bids/ds004230 participant \
   --km-method logan-ma1 \
-  --tstar 540 \
-  --fslicense ~/freesurfer/license.txt:/license.txt
+  --tstar 540
 ```
 
-Note that if FreeSurfer is installed, the FREESURFER_HOME envionment
-variable is set, and there is a valid license file there, then you do
-not need to pass the license file.
+Note: you do NOT need to have FreeSurfer installed locally, but you do
+need a license, which you can get from
+https://surfer.nmr.mgh.harvard.edu/registration.html.  Once you have
+the license, then just add --fs-license /path/to/license on the
+command line.
+
 
 If you want to run your own apptainer command, you can run this:
 
