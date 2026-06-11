@@ -288,8 +288,12 @@ apptainer run \
 ### Group-level analysis
 
 The group analysis allows the user to make inferences across subject and/or time. Make sure
-you have petsurfer-km-group in your path and PETSURFER_SIF defined as described above. Continuing
-with the Cox1 example, one can run something like:
+you have petsurfer-km-group in your path and PETSURFER_SIF defined as described above.
+
+
+#### Cross-sectional Analysis 
+
+Continuing with the Cox1 example, one can run something like:
 
 ```
 petsurfer-km-group ~/datasets/petsurfer-bids/ds004230 group.analysis \
@@ -299,15 +303,14 @@ petsurfer-km-group ~/datasets/petsurfer-bids/ds004230 group.analysis \
   --space fsaverage-lh fsaverage-rh mni ROI \
   --vol-fwhm 6 \
   --surf-fwhm 10 \
-  --cmc 2 500 abs 2 .05
-
+  --cmc 500 2 abs 2 .05
 ```
 
 This performs a one-sample group mean (OSGM) on all of the baseline
 subjects with tracer 11CPS13 that have the Logan MA1 as performed at
 the participant level above. The analyses will be performed in ROI
 space, fsaverage left and right hemisphere with surface smoothing of
-10mm, and MNI152NLin2009cAsym space with a smoothing of 10mm. The
+10mm, and MNI152NLin2009cAsym space with a smoothing of 6mm. The
 output will go into a folder called "group.analysis" with
 glm.fsaverage-lh, glm.fsaverage-rh, glm.mni, and glm.ROI. Each one of
 these folders will have and "osgm" folder, and the map of interest
@@ -322,6 +325,43 @@ on the voxel-wise maps (not the ROI) using permutation. The four options are:
 - nspaces=2 - if eventually performing test over lh and rh hemisphere (likely) use 2
 - FWER=.05 Family-wise error rate. This is the final p-value threshold for clusters. Only report on clusters that are this signficant.
 
+This will produce a file called perm.th20.abs.sig.cluster.summary,
+where th20 implies CFT=2, abs implies sign=abs. This is a text file
+with a table of clusters that survived the .05 threshold.
+
+If more complicated group designs are desired (eg, comparing two groups and/or adding
+regressors like age), then the user can create a FreeSurfer Group Descriptor (FSGD) File.
+As a simple example, consider a two group design with age:
+```
+GroupDescriptorFile 1
+Title OSGM
+Class Group1
+Class Group2
+Contrast group-diff  1 -1 0   0
+Contrast age         0  0 0.5 0.5
+Contrast group-x-age 0  0 -1  -1
+Variables Age
+Input sub-01 Group1 30
+Input sub-02 Group2 40
+...
+
+```
+
+One would then run petsurfer-km-group with --fsgd your.fsgd.  Instead
+of the osgm folder, there will be three folders, one for each
+contrast.  See https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdFormat
+and https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdExamples.
+
+#### Longitudinal Analysis
+
+Longitudinal analysis allows one evaluate the effects of time or an intervention. In BIDS,
+these are called "sessions" abreviated with as "ses". In this data set, if one wanted to
+compare test to retest, then one would add
+```
+--paired test retest
+```
+This will compute a difference between them. The rest is the same as above except that the
+statistics will be for test-retest. Eg, the OSGM will now result in a paired t-test. 
 
 
 ## Development
