@@ -114,7 +114,7 @@ set PETSURFER_SIF /place/where/you/put/petsurfer-bids-0.2.1.sif
 export PETSURFER_SIF
 ```
 When you run this script, it will assume that you are using apptainer. If you 
-want to use singularity or dockker, add --singularity or --docker to the
+want to use singularity or docker, add --singularity or --docker to the
 command line. 
 
 
@@ -246,7 +246,7 @@ visualizations can be disabled with the `--no-freebrowse` flag.
 **Example**
 
 The following command will process the [`ds004230`](https://openneuro.org/datasets/ds004230)
-dataset using the Logan-MA1 model in apptainer.
+dataset using the Logan-MA1 model.
 
 It assumes:
 - The petsurfer-bids container location is set in the PETSURFER_SIF environment variable
