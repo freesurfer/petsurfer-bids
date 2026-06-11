@@ -83,9 +83,7 @@ petsurfer-km bids_dir output_dir {participant,group}
 Like all other BIDS apps, PETsurfer-BIDS is intended to be run inside a 
 *container* (i.e. [docker](https://www.docker.com/),
 [apptainer](https://apptainer.org/), or [singularity](https://sylabs.io/singularity/))
-
 The container registry is located [here](https://hub.docker.com/r/freesurfer/petsurfer-bids/tags)
-
 You can pull `v0.2.1` of the container:
 
 **With Docker**:
@@ -106,16 +104,24 @@ To get this wrapper, clone this repository with
 ```
 git clone https://github.com/freesurfer/petsurfer-bids
 ```
-There will be a petsurfer-km script file. Put that in your path. This
-is all you need from the repository; you do not need to install
-anything. Then create an environment variable to point to the container:
+There will be a petsurfer-km script file in the scripts folder. Put
+that in your path. This is all you need from the repository; you do
+not need to install anything. Then create an environment variable to
+point to the container:
+
 ```
 set PETSURFER_SIF /place/where/you/put/petsurfer-bids-0.2.1.sif
 export PETSURFER_SIF
 ```
+When you run this script, it will assume that you are using apptainer. If you 
+want to use singularity or dockker, add --singularity or --docker to the
+command line. 
+
+
 PETsurfer-BIDS can also be run locally by installing and configuring a
-FreeSurfer and python environment.  See [Development](#development) for
-instructions.
+FreeSurfer and python environment.  See [Development](#development)
+for instructions. Note that the python script is also called
+petsurfer-km, so make sure you are running the right one.
 
 ### Participant-level analysis
 
@@ -197,7 +203,9 @@ PETPrep during preprocessing.
 
 Smoothing is specified as the full-width at half-maximum (FWHM) of a Gaussian
 kernel in mm: `--vol-fwhm` for volumetric analysis and `--surf-fwhm` for
-surface-based analysis.
+surface-based analysis. Note that it makes no sense to apply volume-based
+smoothing to a data set that you have corrected for partial volume, and
+it may make the entire analysis invalid.
 
 By default, all subject/session pairs found under `bids_dir` are processed.
 To limit what gets processed, pass a space-separated list to
@@ -241,8 +249,7 @@ The following command will process the [`ds004230`](https://openneuro.org/datase
 dataset using the Logan-MA1 model in apptainer.
 
 It assumes:
-- The petsurfer-bids container is located at `~/containers/petsurfer-bids-0.1.3.sif`
-  - The container can be downloaded using: `apptainer pull ~/containers/petsurfer-bids-0.1.3.sif docker://freesurfer/petsurfer-bids:0.1.3`
+- The petsurfer-bids container location is set in the PETSURFER_SIF environment variable
 - The `ds004230` dataset has been downloaded to `~/datasets/ds004230`
 - The output will be written to `~/datasets/petsurfer-bids/ds004230`
 - PETPrep has been run on this dataset with `--output-spaces MNI152NLin2009cAsym fsaverage`
@@ -250,6 +257,19 @@ It assumes:
 - bloodstream has been run on this dataset and the output is located at `~/datasets/bloodstream/ds004230`
 - A FreeSurfer license file is located at `~/freesurfer/license.txt`
 - The time to equilibration (t*) is 540 seconds
+
+```
+petsurfer-km ~/datasets/ds004230 ~/datasets/petsurfer-bids/ds004230 participant \
+  --km-method logan-ma1 \
+  --tstar 540 \
+  --fslicense ~/freesurfer/license.txt:/license.txt
+```
+
+Note that if FreeSurfer is installed, the FREESURFER_HOME envionment
+variable is set, and there is a valid license file there, then you do
+not need to pass the license file.
+
+If you want to run your own apptainer command, you can run this:
 
 ```
 apptainer run \
