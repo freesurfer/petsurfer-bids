@@ -92,35 +92,27 @@ You can pull `v0.2.1` of the container:
 ```
 docker pull freesurfer/petsurfer-bids:0.2.3
 ```
-
 **With Apptainer**:
 ```
 apptainer pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
 ```
-
 **With Singularity CE**:
 ```
 singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
 ```
 
-When running PETsurfer-BIDS inside a container, you will need to *bind mount*
-relevant input and output paths.  At a minimum, you will need to *bind mount*:
-- The input data directory (`bids_dir`)
-- The output data directory (`output_dir`)
-- The location of the FreeSurfer license file.  If you don't
-  have a FreeSurfer license file, you can apply for and receive one immediately
-  [here](https://surfer.nmr.mgh.harvard.edu/registration.html).
-  - You can specify the location of the license file inside the container using
-    the environment variable `FS_LICENSE`
-
-If you would like to preserve the temporary work directory, you can bind mount 
-a directory to that and use `--work-dir` to point to the location inside the
-container.
-
-Refer to the documentation for your container platform
-([Docker](https://docs.docker.com), [Singularity/SingularityCE](https://docs.sylabs.io),
-or [Apptainer](https://apptainer.org/docs)) for more information.
-
+To avoid having to write a command line for your container, we have created a shell script wrapper.
+To get this wrapper, clone this repository with
+```
+git clone https://github.com/freesurfer/petsurfer-bids
+```
+There will be a petsurfer-km script file. Put that in your path. This
+is all you need from the repository; you do not need to install
+anything. Then create an environment variable to point to the container:
+```
+set PETSURFER_SIF /place/where/you/put/petsurfer-bids-0.2.1.sif
+export PETSURFER_SIF
+```
 PETsurfer-BIDS can also be run locally by installing and configuring a
 FreeSurfer and python environment.  See [Development](#development) for
 instructions.
