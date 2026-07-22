@@ -318,6 +318,8 @@ class PETsurferGroup:
             if(participant_ids is not None): roivals.insert(0,participant_ids[k]);
             else:                            roivals.insert(0,f"s{k}"); # use sk as subjetname
             for row in tsv:
+                if not row or row[0] == "ROI":  # skip header row added in issue #2
+                    continue
                 roiname = row[0]; # first column
                 roival  = row[1]; # second column
                 if(k==1): roinames.append(roiname); # get ROI names from 1st input

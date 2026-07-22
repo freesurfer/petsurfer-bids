@@ -51,6 +51,17 @@ MAP_FILES = {
     "patlak": ("Ki.nii.gz", "Ki.dat"),
 }
 
+# Per-method header row for the ROI _kinpar.tsv (issue #2).
+# First column is the ROI label; remaining columns are the parameters
+# reported in the FreeSurfer .dat table for that method. SUVR has no ROI output.
+ROI_TSV_HEADERS: dict[str, tuple[str, ...]] = {
+    "mrtm1":     ("ROI", "k2", "k2a", "k2-k2a"),
+    "mrtm2":     ("ROI", "k2", "k2a", "k2-k2a"),
+    "logan":     ("ROI", "VT"),
+    "logan-ma1": ("ROI", "VT"),
+    "patlak":    ("ROI", "Ki"),
+}
+
 # Hemisphere mapping: internal (lh/rh) → BIDS (L/R)
 HEMI_BIDS = {"lh": "L", "rh": "R"}
 
@@ -139,7 +150,7 @@ def run_bidsify(
             name = f"{prefix}_model-{model}_kinpar"
             src_dat = temps[roi_key] / roi_file
             dst_tsv = output_pet_dir / f"{name}.tsv"
-            _convert_dat_to_tsv(src_dat, dst_tsv)
+            _convert_dat_to_tsv(src_dat, dst_tsv, method)
             if file_mappings is not None and dst_tsv.exists():
                 _record_mapping(file_mappings, src_dat, dst_tsv, workdir, subject_outdir)
             _write_json(output_pet_dir / f"{name}.json", {
@@ -305,24 +316,32 @@ def _record_mapping(
     file_mappings.append((work_rel, out_rel))
 
 
-def _convert_dat_to_tsv(src: Path, dest: Path) -> None:
-    """Convert a FreeSurfer ``.dat`` table to TSV format.
+def _convert_dat_to_tsv(src: Path, dest: Path, method: str) -> None:
+    """Convert a FreeSurfer ``.dat`` table to a BIDS-compliant TSV.
 
-    Normalizes whitespace to tab separation and drops comment lines
-    (starting with ``#``).
+    Writes the per-method header row (``ROI`` plus parameter columns), normalizes
+    whitespace to tab separation, and drops comment lines (starting with ``#``),
+    blank lines, and any pre-existing FreeSurfer header row (``frame_start``/``Frame``)
+    from the ``.dat`` source.
     """
     if not src.exists():
         logger.warning(f"Expected output not found, skipping: {src}")
         return
 
+    header = ROI_TSV_HEADERS[method]  # KeyError here is a real logic error (caller guards suvr)
+
     with open(src) as f:
         lines = f.readlines()
 
     with open(dest, "w") as f:
+        f.write("\t".join(header) + "\n")
         for line in lines:
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
-            f.write("\t".join(stripped.split()) + "\n")
+            fields = stripped.split()
+            if fields[0] in ("frame_start", "Frame"):
+                continue  # drop FreeSurfer source header (gamma.table.dat)
+            f.write("\t".join(fields) + "\n")
 
     logger.info(f"  {dest.name}")
