@@ -17,28 +17,10 @@ from pathlib import Path
 
 from petsurfer_km import __version__
 from petsurfer_km.inputs import InputGroup
+from petsurfer_km.methods import MODEL_LABELS, MEAS_LABELS
 
 logger = logging.getLogger("petsurfer_km")
 
-# BEP023 model labels
-MODEL_LABELS = {
-    "suvr": "SUVR",
-    "mrtm1": "MRTM1",
-    "mrtm2": "MRTM2",
-    "logan": "Logan",
-    "logan-ma1": "MA1",
-    "patlak": "Patlak",
-}
-
-# Primary measurement per method
-MEAS_LABELS = {
-    "suvr": "SUVR",
-    "mrtm1": "BPND",
-    "mrtm2": "BPND",
-    "logan": "VT",
-    "logan-ma1": "VT",
-    "patlak": "Ki",
-}
 
 # FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
 # SUVR has no ROI output.

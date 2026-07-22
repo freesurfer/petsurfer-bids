@@ -25,7 +25,7 @@ from pathlib import Path
 from petsurfer_km import __version__
 from petsurfer_km.cli.parser import build_parser
 from petsurfer_km.inputs import InputGroup, discover_inputs
-from petsurfer_km.steps import (
+from petsurfer_km.steps.participant import (
     run_bidsify,
     run_kinetic_modeling,
     run_preprocessing,
@@ -33,6 +33,7 @@ from petsurfer_km.steps import (
     run_surface,
     run_volumetric,
 )
+from petsurfer_km.steps.group import run_group_setup, run_group_analyze
 
 logger = logging.getLogger("petsurfer_km")
 

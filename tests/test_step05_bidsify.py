@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from petsurfer_km.steps.step05_bidsify import ROI_TSV_HEADERS, _convert_dat_to_tsv
+from petsurfer_km.steps.participant.step05_bidsify import ROI_TSV_HEADERS, _convert_dat_to_tsv
 
 
 # --- per-method header --------------------------------------------------------
