@@ -1,4 +1,4 @@
-"""Tests for petsurfer_km.run_group.PETsurferGroup.tsv2glmfit.
+"""Tests for petsurfer_km.steps.group.step02_analyze.tsv2glmfit.
 
 tsv2glmfit merges per-subject ROI TSVs into a single table for mri_glmfit.
 These tests verify the alignment-by-name and intersection-pruning contract.
@@ -7,12 +7,7 @@ import csv
 
 import pytest
 
-from petsurfer_km.run_group import PETsurferGroup
-
-
-def _make_group():
-    """Create a PETsurferGroup without invoking __init__ (which needs a BIDSLayout)."""
-    return object.__new__(PETsurferGroup)
+from petsurfer_km.steps.group.step02_analyze import tsv2glmfit
 
 
 def _write_tsv(path, rows):
@@ -38,8 +33,7 @@ def _run(tsv_files, tmp_path, participant_ids=None):
                 f.write(line)
         paths.append(str(p))
     out = str(tmp_path / "merged.csv")
-    g = _make_group()
-    g.tsv2glmfit(paths, out, participant_ids)
+    tsv2glmfit(paths, out, participant_ids)
     return _read_table(out)
 
 
@@ -175,8 +169,7 @@ class TestLengthMismatch:
         p = tmp_path / "a.tsv"
         p.write_text("r1\t1.0\n")
         out = str(tmp_path / "merged.csv")
-        g = _make_group()
-        g.tsv2glmfit([str(p)], out, ["A", "B"])  # 1 file, 2 ids
+        tsv2glmfit([str(p)], out, ["A", "B"])  # 1 file, 2 ids
         # Function returns early; out file should not exist
         import os
         assert not os.path.exists(out)
