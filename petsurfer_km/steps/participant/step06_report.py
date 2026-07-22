@@ -68,7 +68,7 @@ HEMI_BIDS = {"lh": "L", "rh": "R"}
 # Freebrowse helpers
 # ---------------------------------------------------------------------------
 
-_FREEBROWSE_DIR = Path(__file__).resolve().parent.parent / "freebrowse"
+_FREEBROWSE_DIR = Path(__file__).resolve().parent.parent.parent / "freebrowse"
 
 # Module-level caches (populated on first use)
 _freebrowse_html_cache: str | None = None
