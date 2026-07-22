@@ -300,32 +300,54 @@ class PETsurferGroup:
         # least) two columns, the first column is the ROI name and the
         # second is the value of interest. If participant_ids is passed,
         # then the subjectname is put as the first column.
+        #
+        # Subjects may have different ROI sets (e.g. non-WM-hypointensities
+        # is present in some but not all). Values are aligned by ROI name
+        # (not by row position) and missing ROIs are filled with NaN so
+        # every row has the same number of columns. ROIs not present in
+        # all subjects (any column containing NaN) are then pruned before
+        # the table is emitted. Remove the pruning step to allow NaNs into
+        # mri_glmfit instead.
         if(participant_ids is not None and len(tsvlist) != len(participant_ids)):
             print("ERORR: tsvlist length != subject list length");
             print(len(tsvlist))
             print(len(participant_ids))
             return
-        roitable = [];
-        roinames = ["Subject"]; # First line of the output table
+
+        # First pass: read all TSVs into per-subject dicts and collect
+        # the union of ROI names in first-appearance order.
+        subj_data = []   # list of (subject_id, {roi_name: value})
+        all_roinames = []  # union of ROI names, first-appearance order
+        seen_rois = set()
         for k,tsvfile in enumerate(tsvlist):
             filename, file_extension = os.path.splitext(tsvfile);
             if(file_extension == ".csv"): delimiter=",";
-            if(file_extension == ".tsv"): delimiter="\t"; #dont use tsv
+            if(file_extension == ".tsv"): delimiter="\t";
             tsv = csv.reader(open(tsvfile, "r"), delimiter=delimiter, quotechar='"')
-            # roivals are the values for each ROI
-            roivals = [];
-            # Preprend the subjectname 
-            if(participant_ids is not None): roivals.insert(0,participant_ids[k]);
-            else:                            roivals.insert(0,f"s{k}"); # use sk as subjetname
+            if(participant_ids is not None): subj_id = participant_ids[k];
+            else:                            subj_id = f"s{k}";
+            roi_dict = {}
             for row in tsv:
-                if not row or row[0] == "ROI":  # skip header row added in issue #2
+                if not row or row[0] == "ROI":  # skip header row (issue #2)
                     continue
-                roiname = row[0]; # first column
-                roival  = row[1]; # second column
-                if(k==1): roinames.append(roiname); # get ROI names from 1st input
-                roivals.append(roival);
-            # Add roi values to the table
-            roitable.append(roivals);
+                roi_dict[row[0]] = row[1]
+                if row[0] not in seen_rois:
+                    seen_rois.add(row[0])
+                    all_roinames.append(row[0])
+            subj_data.append((subj_id, roi_dict))
+
+        # Second pass: build aligned table, NaN for missing ROIs.
+        roitable = []
+        for subj_id, roi_dict in subj_data:
+            roivals = [subj_id] + [roi_dict.get(rn, "NaN") for rn in all_roinames]
+            roitable.append(roivals)
+
+        # Prune ROIs (columns) not present in all subjects: keep only the
+        # intersection of ROI sets. Drop any ROI column containing a NaN.
+        keep = [i for i in range(len(all_roinames))
+                if all(row[i+1] != "NaN" for row in roitable)]
+        roinames = ["Subject"] + [all_roinames[i] for i in keep]
+        roitable = [[row[0]] + [row[i+1] for i in keep] for row in roitable]
 
         # Note: can't pass .tsv file to mri_glmfit because it thinks
         # it is a tac file. As a hack, have to call it csv but really
