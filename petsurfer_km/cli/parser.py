@@ -186,6 +186,26 @@ Examples:
             "Default: <bids_dir>/derivatives/petsurfer"
         ),
     )
+    group_group.add_argument(
+        "--fsgd",
+        type=Path,
+        metavar="PATH",
+        help="FreeSurfer Group Descriptor file specifying subjects, classes, and covariates.",
+    )
+    group_group.add_argument(
+        "--paired",
+        nargs=2,
+        metavar=("SES1", "SES2"),
+        help="Paired longitudinal analysis: compute difference between two sessions.",
+    )
+    group_group.add_argument(
+        "--cmc",
+        nargs=5,
+        metavar=("CFT", "NPERM", "SIGN", "NSPACES", "FWER"),
+        help="Correction for multiple comparisons (voxel-wise only): "
+             "cluster-forming threshold, n-permutations, sign (abs|pos|neg), "
+             "n-spaces, family-wise error rate.",
+    )
 
     # Filtering arguments
     filter_group = parser.add_argument_group("Filtering")

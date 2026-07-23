@@ -25,7 +25,7 @@ from pathlib import Path
 from petsurfer_km import __version__
 from petsurfer_km.cli.parser import build_parser
 from petsurfer_km.inputs import InputGroup, discover_inputs
-from petsurfer_km.steps import (
+from petsurfer_km.steps.participant import (
     run_bidsify,
     run_kinetic_modeling,
     run_preprocessing,
@@ -33,6 +33,7 @@ from petsurfer_km.steps import (
     run_surface,
     run_volumetric,
 )
+from petsurfer_km.steps.group import run_group_setup, run_group_analyze, run_group_bidsify
 
 logger = logging.getLogger("petsurfer_km")
 
@@ -79,6 +80,18 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
                 f"petsurfer-dir does not exist: {args.petsurfer_dir}\n"
                 f"Participant-level analysis must be run first."
             )
+        if len(args.km_method) != 1:
+            parser.error("Group analysis requires exactly one --km-method.")
+        if args.session_label is not None and args.paired is not None:
+            parser.error("Cannot specify both --session-label and --paired.")
+        if args.session_label is not None and len(args.session_label) > 1:
+            parser.error(
+                "Group analysis supports one session via --session-label or two via --paired."
+            )
+        if args.fsgd is not None and not args.fsgd.exists():
+            parser.error(f"FSGD file not found: {args.fsgd}")
+        if args.cmc is not None and args.cmc[2] not in ("abs", "pos", "neg"):
+            parser.error(f"Invalid --cmc sign: {args.cmc[2]} (must be abs, pos, or neg).")
         return
 
     # Check that tstar is provided for invasive methods (Logan, Patlak)
@@ -279,8 +292,30 @@ def run_group(args: argparse.Namespace) -> int:
     logger.info(f"petsurfer_km version: {__version__}")
     logger.info("Starting group-level analysis")
     logger.info(f"PetSurfer participant-level directory: {args.petsurfer_dir}")
-    logger.error("Group-level analysis is not yet implemented")
-    return 1
+    logger.info(f"Work directory: {args.work_dir}")
+
+    args.work_dir.mkdir(parents=True, exist_ok=True)
+    ensure_fsaverage()
+
+    context = run_group_setup(args, args.work_dir, parser=build_parser())
+    run_group_analyze(context, args, args.work_dir)
+    run_group_bidsify(context, args, args.work_dir)
+
+    logger.info(f"Group analysis complete. BIDS outputs in: {args.output_dir}")
+
+    # Cleanup work-dir unless --nocleanup. The work-dir is an intermediate
+    # staging area; BIDS outputs have been written to output_dir by
+    # run_group_bidsify. Users must pass --nocleanup to inspect intermediate outputs.
+    if args.nocleanup:
+        logger.info(f"Skipping cleanup (--nocleanup). Work directory: {args.work_dir}")
+    else:
+        logger.info(f"Cleaning up working directory: {args.work_dir}")
+        try:
+            shutil.rmtree(args.work_dir)
+        except Exception as e:
+            logger.warning(f"Failed to clean up working directory: {e}")
+
+    return 0
 
 
 def run(args: argparse.Namespace) -> int:

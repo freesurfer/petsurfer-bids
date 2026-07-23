@@ -106,17 +106,15 @@ git clone https://github.com/freesurfer/petsurfer-bids
 ```
 There will be a petsurfer-km script file in the scripts folder. Put
 that in your path. This is all you need from the repository; you do
-not need to install anything. If you are going to do group analysis,
-then do the same for petsurfer-km-group. Before using these scripts,
+not need to install anything. Before using these scripts,
 create an environment variable to point to the container:
 ```
 set PETSURFER_SIF /place/where/you/put/petsurfer-bids-0.2.1.sif
 export PETSURFER_SIF
 ```
-When you run this script, it will assume that you are using apptainer. If you 
+When you run this script, it will assume that you are using apptainer. If you
 want to use singularity or docker, add --singularity or --docker to the
-command line. 
-
+command line.
 
 PETsurfer-BIDS can also be run locally by installing and configuring a
 FreeSurfer and python environment.  See [Development](#development)
@@ -287,38 +285,61 @@ apptainer run \
 
 ### Group-level analysis
 
-The group analysis allows the user to make inferences across subject and/or time. Make sure
-you have petsurfer-km-group in your path and PETSURFER_SIF defined as described above.
+The group analysis allows the user to make inferences across subject and/or time.
+It uses the same `petsurfer-km` command with the `group` analysis level.
 
-
-#### Cross-sectional Analysis 
+#### Cross-sectional Analysis
 
 Continuing with the Cox1 example, one can run something like:
 
 ```
-petsurfer-km-group ~/datasets/petsurfer-bids/ds004230 group.analysis \
-  --ses baseline \
-  --km MA1 \
-  --tracer 11CPS13 \
-  --space fsaverage-lh fsaverage-rh mni ROI \
+petsurfer-km \
+  ~/datasets/petsurfer-bids/ds004230 \
+  ~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer/group \
+  group \
+  --petsurfer-dir ~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer \
+  --session-label baseline \
+  --km-method logan-ma1 \
   --vol-fwhm 6 \
   --surf-fwhm 10 \
-  --cmc 500 2 abs 2 .05
+  --cmc 2 500 abs 2 .05
 ```
 
 This performs a one-sample group mean (OSGM) on all of the baseline
-subjects with tracer 11CPS13 that have the Logan MA1 as performed at
-the participant level above. The analyses will be performed in ROI
-space, fsaverage left and right hemisphere with surface smoothing of
-10mm, and MNI152NLin2009cAsym space with a smoothing of 6mm. The
-output will go into a folder called "group.analysis" with
-glm.fsaverage-lh, glm.fsaverage-rh, glm.mni, and glm.ROI. Each one of
-these folders will have and "osgm" folder, and the map of interest
+subjects that have the Logan MA1 as performed at the participant level
+above. The tracer is inferred automatically from the participant-level
+outputs. The analyses will be performed in ROI space, fsaverage left
+and right hemisphere, and MNI152NLin2009cAsym space.
+
+The `output_dir` positional
+(`~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer/group`)
+will receive BIDS-conformant group outputs in a future version. In the
+current version, group analysis results (glm.fsaverage-lh,
+glm.fsaverage-rh, glm.mni, and glm.ROI) are written to a temporary
+work directory and deleted after analysis. To inspect the intermediate
+results, add `--work-dir <path>` and `--nocleanup`:
+
+```
+petsurfer-km \
+  ~/datasets/petsurfer-bids/ds004230 \
+  ~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer/group \
+  group \
+  --petsurfer-dir ~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer \
+  --work-dir group-analysis \
+  --nocleanup \
+  --session-label baseline \
+  --km-method logan-ma1 \
+  --vol-fwhm 6 \
+  --surf-fwhm 10 \
+  --cmc 2 500 abs 2 .05
+```
+
+Each `glm.*` folder will have an `osgm` folder, and the map of interest
 will be either gamma.nii.gz (the population mean map) or the
 sig.nii.gz map (this is a map of the -log10(p-value)).
 
-The --cmc flag is optional. It performs correction for multiple comparisons
-on the voxel-wise maps (not the ROI) using permutation. The four options are:
+The `--cmc` flag is optional. It performs correction for multiple comparisons
+on the voxel-wise maps (not the ROI) using permutation. The five options are:
 - CFT=2 is the cluster-forming threshold in -log10(p) units, so 2 means voxelwise p<.01
 - Npermutations=500 number of permutations
 - sign=abs -  abs means absolute (ie, an unsigned test), pos means positive, neg mean negative
@@ -347,7 +368,7 @@ Input sub-02 Group2 40
 
 ```
 
-One would then run petsurfer-km-group with --fsgd your.fsgd.  Instead
+One would then run petsurfer-km with `--fsgd your.fsgd`.  Instead
 of the osgm folder, there will be three folders, one for each
 contrast.  See https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdFormat
 and https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdExamples.
@@ -361,8 +382,7 @@ compare test to retest, then one would add
 --paired test retest
 ```
 This will compute a difference between them. The rest is the same as above except that the
-statistics will be for test-retest. Eg, the OSGM will now result in a paired t-test. 
-
+statistics will be for test-retest. Eg, the OSGM will now result in a paired t-test.
 
 ## Development
 
