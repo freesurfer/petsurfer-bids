@@ -543,7 +543,7 @@ def _write_report_html(
 <div class="container my-4">
 
   <section id="summary">
-    <h2>Summary</h2>
+    <h2>Participant-level Summary</h2>
     {summary_section}
   </section>
 

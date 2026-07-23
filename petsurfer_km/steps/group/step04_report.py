@@ -589,7 +589,7 @@ def _write_group_report_html(
 <div class="container my-4">
 
   <section id="summary">
-    <h2>Summary</h2>
+    <h2>Group-level Summary</h2>
     {summary_section}
   </section>
 
