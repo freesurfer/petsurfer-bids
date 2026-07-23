@@ -134,6 +134,7 @@ def run_group_analyze(
     context: GroupContext,
     args: Namespace,
     workdir: Path,
+    command_history: list[tuple[str, str]] | None = None,
 ) -> None:
     """Execute group-level analysis for each space in the context.
 
@@ -211,6 +212,8 @@ def run_group_analyze(
                 raise RuntimeError(
                     f"Failed to concatenate {space}: {result.stderr}"
                 )
+            if command_history is not None:
+                command_history.append((result.command, f"Concatenate {space} stack"))
         else:
             tsv2glmfit(flist, str(params.stack), subjects)
 
@@ -232,6 +235,8 @@ def run_group_analyze(
         result = run_command(cmd.split(), f"GLM fit {space}")
         if result.exit_code != 0:
             raise RuntimeError(f"GLM fit failed for {space}: {result.stderr}")
+        if command_history is not None:
+            command_history.append((result.command, f"GLM fit {space}"))
         logger.info(f"GLM complete: {glmdir}")
 
         # 6. Run CMC (if requested and voxel-wise)
@@ -247,4 +252,6 @@ def run_group_analyze(
             result = run_command(cmd.split(), f"CMC permutation {space}")
             if result.exit_code != 0:
                 raise RuntimeError(f"CMC failed for {space}: {result.stderr}")
+            if command_history is not None:
+                command_history.append((result.command, f"CMC permutation {space}"))
             logger.info(f"CMC complete: {glmdir}")

@@ -43,3 +43,14 @@ ROI_TSV_HEADERS: dict[str, tuple[str, ...]] = {
     "logan-ma1": ("ROI", "VT"),
     "patlak":    ("ROI", "Ki"),
 }
+
+# FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+# SUVR has no ROI output.
+MAP_FILES: dict[str, tuple[str | None, str | None]] = {
+    "suvr": ("suvr.nii.gz", None),
+    "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
+    "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
+    "logan": ("vt.nii.gz", "vt.dat"),
+    "logan-ma1": ("vt.nii.gz", "vt.dat"),
+    "patlak": ("Ki.nii.gz", "Ki.dat"),
+}
