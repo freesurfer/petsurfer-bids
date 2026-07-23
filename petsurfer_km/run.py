@@ -33,7 +33,7 @@ from petsurfer_km.steps.participant import (
     run_surface,
     run_volumetric,
 )
-from petsurfer_km.steps.group import run_group_setup, run_group_analyze
+from petsurfer_km.steps.group import run_group_setup, run_group_analyze, run_group_bidsify
 
 logger = logging.getLogger("petsurfer_km")
 
@@ -299,12 +299,13 @@ def run_group(args: argparse.Namespace) -> int:
 
     context = run_group_setup(args, args.work_dir, parser=build_parser())
     run_group_analyze(context, args, args.work_dir)
+    run_group_bidsify(context, args, args.work_dir)
 
-    logger.info(f"Group analysis complete. Outputs in: {args.work_dir}")
+    logger.info(f"Group analysis complete. BIDS outputs in: {args.output_dir}")
 
     # Cleanup work-dir unless --nocleanup. The work-dir is an intermediate
-    # staging area; a future iteration will BIDSify its contents into
-    # output_dir. Users must pass --nocleanup to inspect intermediate outputs.
+    # staging area; BIDS outputs have been written to output_dir by
+    # run_group_bidsify. Users must pass --nocleanup to inspect intermediate outputs.
     if args.nocleanup:
         logger.info(f"Skipping cleanup (--nocleanup). Work directory: {args.work_dir}")
     else:
