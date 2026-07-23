@@ -33,7 +33,7 @@ from petsurfer_km.steps.participant import (
     run_surface,
     run_volumetric,
 )
-from petsurfer_km.steps.group import run_group_setup, run_group_analyze, run_group_bidsify
+from petsurfer_km.steps.group import run_group_setup, run_group_analyze, run_group_bidsify, run_group_report
 
 logger = logging.getLogger("petsurfer_km")
 
@@ -297,9 +297,13 @@ def run_group(args: argparse.Namespace) -> int:
     args.work_dir.mkdir(parents=True, exist_ok=True)
     ensure_fsaverage()
 
+    command_history: list[tuple[str, str]] = []
+    file_mappings: list[tuple[str, str]] = []
+
     context = run_group_setup(args, args.work_dir, parser=build_parser())
-    run_group_analyze(context, args, args.work_dir)
-    run_group_bidsify(context, args, args.work_dir)
+    run_group_analyze(context, args, args.work_dir, command_history)
+    run_group_bidsify(context, args, args.work_dir, file_mappings)
+    run_group_report(context, args, args.work_dir, command_history, file_mappings)
 
     logger.info(f"Group analysis complete. BIDS outputs in: {args.output_dir}")
 

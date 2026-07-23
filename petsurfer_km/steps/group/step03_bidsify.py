@@ -37,7 +37,12 @@ def _sanitize_contrast(label: str) -> str:
     return re.sub(r"[^0-9a-zA-Z+]", "", label)
 
 
-def run_group_bidsify(context: GroupContext, args: Namespace, workdir: Path) -> None:
+def run_group_bidsify(
+    context: GroupContext,
+    args: Namespace,
+    workdir: Path,
+    file_mappings: list[tuple[str, str]] | None = None,
+) -> None:
     """Copy GLM contrast estimate results into ``args.output_dir`` with BIDS-compliant names."""
     logger.info(f"Writing BIDS group outputs to {args.output_dir}")
     _ensure_dataset_description(args.output_dir, args.petsurfer_dir)
@@ -46,9 +51,9 @@ def run_group_bidsify(context: GroupContext, args: Namespace, workdir: Path) -> 
 
     for space in context.spaces:
         if space == "ROI":
-            _bidsify_roi(workdir, args.output_dir, context)
+            _bidsify_roi(workdir, args.output_dir, context, file_mappings)
         else:
-            _bidsify_map(workdir, args.output_dir, args, space, context)
+            _bidsify_map(workdir, args.output_dir, args, space, context, file_mappings)
 
     logger.info(f"BIDS group outputs written to {args.output_dir}")
 
@@ -121,6 +126,7 @@ def _bidsify_map(
     args: Namespace,
     space: str,
     context: GroupContext,
+    file_mappings: list[tuple[str, str]] | None = None,
 ) -> None:
     """Emit one contrast estimate mimap per contrast for a voxel/surface space."""
     glmdir = workdir / f"glm.{space}"
@@ -151,6 +157,11 @@ def _bidsify_map(
         ]
         name = "_".join(parts)
         _copy_nifti(src, outdir / f"{name}.nii.gz")
+        if file_mappings is not None:
+            file_mappings.append((
+                str(src.relative_to(workdir)),
+                str((outdir / f"{name}.nii.gz").relative_to(output_dir)),
+            ))
         _write_json(
             outdir / f"{name}.json",
             _build_mimap_sidecar(context, space, fwhm, contrast),
@@ -161,7 +172,12 @@ def _bidsify_map(
 # BIDSify: ROI table
 # ---------------------------------------------------------------------------
 
-def _bidsify_roi(workdir: Path, output_dir: Path, context: GroupContext) -> None:
+def _bidsify_roi(
+    workdir: Path,
+    output_dir: Path,
+    context: GroupContext,
+    file_mappings: list[tuple[str, str]] | None = None,
+) -> None:
     """Emit one per-ROI contrast estimate kinpar TSV per contrast."""
     glmdir = workdir / "glm.ROI"
     contrasts = _discover_contrasts_roi(glmdir)
@@ -182,6 +198,11 @@ def _bidsify_roi(workdir: Path, output_dir: Path, context: GroupContext) -> None
             output_dir / f"{name}.json",
             _build_kinpar_sidecar(context, contrast),
         )
+        if file_mappings is not None:
+            file_mappings.append((
+                "glm.ROI/gamma.table.dat",
+                f"{name}.tsv",
+            ))
 
 
 # ---------------------------------------------------------------------------

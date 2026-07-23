@@ -17,21 +17,9 @@ from pathlib import Path
 
 from petsurfer_km import __version__
 from petsurfer_km.inputs import InputGroup
-from petsurfer_km.methods import MODEL_LABELS, MEAS_LABELS, HEMI_BIDS, ROI_TSV_HEADERS
+from petsurfer_km.methods import MAP_FILES, MODEL_LABELS, MEAS_LABELS, HEMI_BIDS, ROI_TSV_HEADERS
 
 logger = logging.getLogger("petsurfer_km")
-
-
-# FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
-# SUVR has no ROI output.
-MAP_FILES = {
-    "suvr": ("suvr.nii.gz", None),
-    "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
-    "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
-    "logan": ("vt.nii.gz", "vt.dat"),
-    "logan-ma1": ("vt.nii.gz", "vt.dat"),
-    "patlak": ("Ki.nii.gz", "Ki.dat"),
-}
 
 
 def run_bidsify(
