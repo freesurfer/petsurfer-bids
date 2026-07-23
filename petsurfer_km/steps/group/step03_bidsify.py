@@ -1,12 +1,12 @@
 """BIDS-compliant output step for group-level petsurfer-km results.
 
-Copies GLM group-mean results (gamma maps + ROI gamma table) from the working
+Copies GLM contrast estimate results (gamma maps + ROI gamma table) from the working
 directory to the output directory with BIDS-compliant naming per the BIDS Atlas
 specification (BEP 38):
 
-  - Group-mean parametric maps (volume/surface): ``_mimap.nii.gz`` + ``_mimap.json``
+  - Contrast estimate parametric maps (volume/surface): ``_mimap.nii.gz`` + ``_mimap.json``
     under ``tpl-<space>/pet/`` with ``atlas-PetsurferKM`` and ``desc-<contrast>``.
-  - Per-ROI group-mean kinetic parameters (tabular): ``_kinpar.tsv`` + ``_kinpar.json``
+  - Per-ROI contrast estimate kinetic parameters (tabular): ``_kinpar.tsv`` + ``_kinpar.json``
     at the output root with ``atlas-PetsurferKM`` and ``desc-<contrast>``.
   - ``atlas-PetsurferKM_description.json`` (required by BEP 38 when both
     ``tpl-`` and ``atlas-`` entities are present).
@@ -38,7 +38,7 @@ def _sanitize_contrast(label: str) -> str:
 
 
 def run_group_bidsify(context: GroupContext, args: Namespace, workdir: Path) -> None:
-    """Copy GLM group-mean results into ``args.output_dir`` with BIDS-compliant names."""
+    """Copy GLM contrast estimate results into ``args.output_dir`` with BIDS-compliant names."""
     logger.info(f"Writing BIDS group outputs to {args.output_dir}")
     _ensure_dataset_description(args.output_dir, args.petsurfer_dir)
     sample_size = _read_sample_size(workdir, context)
@@ -122,7 +122,7 @@ def _bidsify_map(
     space: str,
     context: GroupContext,
 ) -> None:
-    """Emit one group-mean mimap per contrast for a voxel/surface space."""
+    """Emit one contrast estimate mimap per contrast for a voxel/surface space."""
     glmdir = workdir / f"glm.{space}"
     contrasts = _discover_contrasts_map(glmdir)
     if not contrasts:
@@ -162,7 +162,7 @@ def _bidsify_map(
 # ---------------------------------------------------------------------------
 
 def _bidsify_roi(workdir: Path, output_dir: Path, context: GroupContext) -> None:
-    """Emit one per-ROI group-mean kinpar TSV per contrast."""
+    """Emit one per-ROI contrast estimate kinpar TSV per contrast."""
     glmdir = workdir / "glm.ROI"
     contrasts = _discover_contrasts_roi(glmdir)
     if not contrasts:
@@ -234,7 +234,7 @@ def _build_mimap_sidecar(
         "ContrastName": contrast,
         "SmoothingFWHM": fwhm,
         "Description": (
-            f"{context.meas} group-mean parametric map ({contrast} contrast) "
+            f"{context.meas} contrast estimate parametric map ({contrast} contrast) "
             f"in {space} from {context.model} model"
         ),
     }
@@ -247,7 +247,7 @@ def _build_kinpar_sidecar(context: GroupContext, contrast: str) -> dict:
         "SoftwareVersion": __version__,
         "ContrastName": contrast,
         "Description": (
-            f"Per-ROI {ROI_TSV_HEADERS[context.km_method][1]} group-mean "
+            f"Per-ROI {ROI_TSV_HEADERS[context.km_method][1]} contrast estimate "
             f"({contrast} contrast) kinetic parameters from {context.model} model"
         ),
     }
@@ -261,7 +261,7 @@ def _write_atlas_description(
     output_dir: Path, sample_size: int | None, context: GroupContext
 ) -> None:
     desc: dict = {
-        "Name": "petsurfer-km group-mean atlas",
+        "Name": "petsurfer-km contrast estimate atlas",
         "Authors": ["FreeSurfer petsurfer-km contributors"],
         "License": "CC0",
         "ReferencesAndLinks": [
@@ -271,7 +271,7 @@ def _write_atlas_description(
         "Species": "Human",
         "DerivedFrom": "PET kinetic modeling (petsurfer-km participant level)",
         "Description": (
-            f"Group-mean {context.meas} parametric maps aggregated across "
+            f"Contrast estimate {context.meas} parametric maps aggregated across "
             f"{sample_size} subject(s) by petsurfer-km ({context.model} model)."
         ),
     }
