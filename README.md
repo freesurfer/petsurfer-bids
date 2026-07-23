@@ -84,19 +84,19 @@ Like all other BIDS apps, PETsurfer-BIDS is intended to be run inside a
 *container* (i.e. [docker](https://www.docker.com/),
 [apptainer](https://apptainer.org/), or [singularity](https://sylabs.io/singularity/))
 The container registry is located [here](https://hub.docker.com/r/freesurfer/petsurfer-bids/tags)
-You can pull `v0.2.1` of the container:
+You can pull `v0.3.0` of the container:
 
 **With Docker**:
 ```
-docker pull freesurfer/petsurfer-bids:0.2.3
+docker pull freesurfer/petsurfer-bids:0.3.0
 ```
 **With Apptainer**:
 ```
-apptainer pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
+apptainer pull petsurfer-bids-0.3.0.sif docker://freesurfer/petsurfer-bids:0.3.0
 ```
 **With Singularity CE**:
 ```
-singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3
+singularity pull petsurfer-bids-0.3.0.sif docker://freesurfer/petsurfer-bids:0.3.0
 ```
 
 To avoid having to write a command line for your container, we have created a shell script wrapper.
@@ -109,7 +109,7 @@ that in your path. This is all you need from the repository; you do
 not need to install anything. Before using these scripts,
 create an environment variable to point to the container:
 ```
-set PETSURFER_SIF /place/where/you/put/petsurfer-bids-0.2.1.sif
+set PETSURFER_SIF /place/where/you/put/petsurfer-bids-0.3.0.sif
 export PETSURFER_SIF
 ```
 When you run this script, it will assume that you are using apptainer. If you
@@ -277,7 +277,7 @@ apptainer run \
   -B ~/freesurfer/license.txt:/license.txt:ro \
   --env FS_LICENSE=/license.txt \
   --pwd /data/output \
-  ~/containers/petsurfer-bids-0.2.1.sif \
+  ~/containers/petsurfer-bids-0.3.0.sif \
     petsurfer-km /data/input /data/output participant \
       --km-method logan-ma1 \
       --tstar 540 \
