@@ -5,6 +5,6 @@ This package provides tools for performing kinetic modeling analysis on PET data
 using FreeSurfer's PetSurfer tools, following the BIDS App specification.
 """
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 
 __all__ = ["__version__"]
