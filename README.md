@@ -307,51 +307,21 @@ petsurfer-km \
 
 This performs a one-sample group mean (OSGM) on all of the baseline
 subjects that have the Logan MA1 as performed at the participant level
-above. The tracer is inferred automatically from the participant-level
-outputs. The analyses will be performed in ROI space, fsaverage left
+above. The analyses will be performed in ROI space, fsaverage left
 and right hemisphere, and MNI152NLin2009cAsym space.
 
-The `output_dir` positional
-(`~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer/group`)
-will receive BIDS-conformant group outputs in a future version. In the
-current version, group analysis results (glm.fsaverage-lh,
-glm.fsaverage-rh, glm.mni, and glm.ROI) are written to a temporary
-work directory and deleted after analysis. To inspect the intermediate
-results, add `--work-dir <path>` and `--nocleanup`:
-
-```
-petsurfer-km \
-  ~/datasets/petsurfer-bids/ds004230 \
-  ~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer/group \
-  group \
-  --petsurfer-dir ~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer \
-  --work-dir group-analysis \
-  --nocleanup \
-  --session-label baseline \
-  --km-method logan-ma1 \
-  --vol-fwhm 6 \
-  --surf-fwhm 10 \
-  --cmc 2 500 abs 2 .05
-```
-
-Each `glm.*` folder will have an `osgm` folder, and the map of interest
-will be either gamma.nii.gz (the population mean map) or the
-sig.nii.gz map (this is a map of the -log10(p-value)).
-
 The `--cmc` flag is optional. It performs correction for multiple comparisons
-on the voxel-wise maps (not the ROI) using permutation. The five options are:
+on the voxel-wise maps using permutation. The five parameters are:
 - CFT=2 is the cluster-forming threshold in -log10(p) units, so 2 means voxelwise p<.01
 - Npermutations=500 number of permutations
 - sign=abs -  abs means absolute (ie, an unsigned test), pos means positive, neg mean negative
 - nspaces=2 - if eventually performing test over lh and rh hemisphere (likely) use 2
 - FWER=.05 Family-wise error rate. This is the final p-value threshold for clusters. Only report on clusters that are this signficant.
 
-This will produce a file called perm.th20.abs.sig.cluster.summary,
-where th20 implies CFT=2, abs implies sign=abs. This is a text file
-with a table of clusters that survived the .05 threshold.
-
 If more complicated group designs are desired (eg, comparing two groups and/or adding
-regressors like age), then the user can create a FreeSurfer Group Descriptor (FSGD) File.
+regressors like age), then the user can create a
+[FreeSurfer Group Descriptor (FSGD) File](https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdFormat).
+
 As a simple example, consider a two group design with age:
 ```
 GroupDescriptorFile 1
@@ -365,13 +335,28 @@ Variables Age
 Input sub-01 Group1 30
 Input sub-02 Group2 40
 ...
-
 ```
 
-One would then run petsurfer-km with `--fsgd your.fsgd`.  Instead
-of the osgm folder, there will be three folders, one for each
-contrast.  See https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdFormat
-and https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdExamples.
+One would then run petsurfer-km with `--fsgd your.fsgd.file`.
+
+When performing a group-level analysis, the following files are writtent to the
+`output_dir` (`~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer/group`
+in the above example)
+
+- `dataset_description.json`: derivative dataset metadata with provenance
+  traced back through the participant-level petsurfer-km output.
+- `atlas-PetsurferKM_description.json`: required atlas description
+  (Name, Authors, License, SampleSize, ReferencesAndLinks, etc.).
+
+And the following files are written for each contrast defined (i.e. `OSGM` in the
+first example or each contrast defined in the fsgd file):
+
+- `tpl-fsaverage/pet/*_mimap.[json|nii.gz]`: contrast estimate maps on the
+  fsaverage surface, left (`hemi-L`) and right (`hemi-R`) hemispheres.
+- `tpl-MNI152NLin2009cAsym/pet/*_mimap.[json|nii.gz]`: contrast estimate maps
+  in MNI152 volumetric space.
+- `atlas-PetsurferKM_desc-*_model-*_kinpar.[json|tsv]`: per-ROI contrast estimate
+  kinetic parameters (one TSV per contrast).
 
 #### Longitudinal Analysis
 
