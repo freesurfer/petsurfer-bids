@@ -334,7 +334,7 @@ petsurfer-km \
   --cmc 2 500 abs 2 .05
 ```
 
-Each glm.* folder will have an "osgm" folder, and the map of interest
+Each `glm.*` folder will have an `osgm` folder, and the map of interest
 will be either gamma.nii.gz (the population mean map) or the
 sig.nii.gz map (this is a map of the -log10(p-value)).
 
@@ -368,7 +368,7 @@ Input sub-02 Group2 40
 
 ```
 
-One would then run petsurfer-km with --fsgd your.fsgd.  Instead
+One would then run petsurfer-km with `--fsgd your.fsgd`.  Instead
 of the osgm folder, there will be three folders, one for each
 contrast.  See https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdFormat
 and https://surfer.nmr.mgh.harvard.edu/fswiki/FsgdExamples.
