@@ -35,8 +35,9 @@ HEMI_BIDS = {"lh": "L", "rh": "R"}
 
 # Per-method header row for the ROI _kinpar.tsv (issue #2).
 # First column is the ROI label; remaining columns are the parameters
-# reported in the FreeSurfer .dat table for that method. SUVR has no ROI output.
+# reported in the FreeSurfer .dat table for that method.
 ROI_TSV_HEADERS: dict[str, tuple[str, ...]] = {
+    "suvr":      ("ROI", "SUVR"),
     "mrtm1":     ("ROI", "k2", "k2a", "k2-k2a"),
     "mrtm2":     ("ROI", "k2", "k2a", "k2-k2a"),
     "logan":     ("ROI", "VT"),
@@ -45,9 +46,8 @@ ROI_TSV_HEADERS: dict[str, tuple[str, ...]] = {
 }
 
 # FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
-# SUVR has no ROI output.
 MAP_FILES: dict[str, tuple[str | None, str | None]] = {
-    "suvr": ("suvr.nii.gz", None),
+    "suvr": ("suvr.nii.gz", "suvr.dat"),
     "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
     "mrtm2": ("bp.nii.gz", "gamma.table.dat"),
     "logan": ("vt.nii.gz", "vt.dat"),

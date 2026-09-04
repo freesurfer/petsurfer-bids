@@ -360,9 +360,14 @@ def run(args: argparse.Namespace) -> int:
     require_input_function = bool(invasive_methods.intersection(args.km_method))
 
     # SUVR requires --suvr-frame
-    if "suvr" in args.km_method and args.suvr_frame is None:
-        logger.error("--suvr-frame is required when --km-method includes suvr")
-        return 1
+    if "suvr" in args.km_method:
+        if not args.suvr_frame:
+            logger.error("--suvr-frame is required when --km-method includes suvr")
+            return 1
+        if len(set(args.suvr_frame)) != len(args.suvr_frame):
+            logger.error(f"--suvr-frame contains duplicate indices: {args.suvr_frame}")
+            return 1
+        args.suvr_frame = sorted(args.suvr_frame)
 
     # Discover input files
     input_groups = discover_inputs(

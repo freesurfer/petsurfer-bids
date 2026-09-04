@@ -141,7 +141,7 @@ MRTM2 relies on the rate constant of the reference region (`k2prime`) estimated
 in MRTM1. Specifying MRTM2 automatically includes MRTM1.
 
 For each kinetic model specified, the following analyses will be performed:
-- ROI based (except for SUVR)
+- ROI based
 - Volumetric (voxel) based
 - Surface (voxel) based
 
@@ -180,6 +180,26 @@ tacs matching the following format to use as the input for the reference region:
 ```
 sub-<subname>_ses-<sesname>_label-<labelname>_desc-preproc_tacs.tsv
 ```
+
+For SUVR, the frame or frames that make up the SUVR window are specified with
+`--suvr-frame`, using 0-indexed frame numbers:
+
+Specifying a single frame:
+```
+--suvr-frame 5
+```
+
+Specifying a window spanning three frames,
+```
+--suvr-frame 5 6 7
+```
+
+When more than one frame is given, the PET signal is combined across those
+frames as a *frame-duration-weighted average*, and the reference region is
+combined the same way; SUVR is then the ratio of the two.  This is equivalent to the
+AUC(t1..t2) ratio computed by the Turku PET Centre's
+[dftratio](https://www.turkupetcentre.net/petanalysis/tpcclib/doc/dftratio.html)
+and [imgratio](https://www.turkupetcentre.net/petanalysis/tpcclib/doc/imgratio.html).
 
 For MRTM2 modelling, a comma separated list of high-binding regions can be
 specified using the `--mrtm2-hb` flag (default: `Left-Putamen,Right-Putamen`).
@@ -220,7 +240,8 @@ For each subject/session/kinetic-model combination, the following outputs will
 be generated and placed in the `<output_dir>/sub-<subid>/ses-<sessid>/pet/`
 directory:
 - `*_mimap.[json|nii.gz]`: A molecular imaging map of VT (`meas-VT`; for Logan and Logan-MA1 models),
-BPND (`meas-BPND`; for MRTM1 or MRTM2 models), or Ki (`meas-Ki`; for the Patlak model) in:
+BPND (`meas-BPND`; for MRTM1 or MRTM2 models), Ki (`meas-Ki`; for the Patlak model), or
+SUVR (`meas-SUVR`; for the SUVR model) in:
   - `MNI152NLin2009cAsym` space
   - `fsaverage` space, left (`hemi-L`) and right (`hemi-R`) hemispheres
 - `*_kinpar.[json|tsv]`: model parameters averaged across the ROIs defined by PETprep

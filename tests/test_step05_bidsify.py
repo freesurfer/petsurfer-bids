@@ -124,5 +124,6 @@ def test_unknown_method_raises_keyerror(tmp_path: Path) -> None:
     src = tmp_path / "roi.dat"
     src.write_text("Left-Cerebellum-Cortex 0.1\n")
     dest = tmp_path / "out.tsv"
+    assert "not-a-method" not in ROI_TSV_HEADERS
     with pytest.raises(KeyError):
-        _convert_dat_to_tsv(src, dest, "suvr")
+        _convert_dat_to_tsv(src, dest, "not-a-method")
