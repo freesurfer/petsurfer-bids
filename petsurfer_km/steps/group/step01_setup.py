@@ -93,8 +93,7 @@ def run_group_setup(args: Namespace, workdir: Path, parser: ArgumentParser | Non
     if not args.no_surf:
         for hemi in args.hemispheres:
             spaces.append(f"fsaverage-{hemi}")
-    if km_method != "suvr":
-        spaces.append("ROI")
+    spaces.append("ROI")
     if not spaces:
         msg = "No analysis spaces selected."
         if parser:

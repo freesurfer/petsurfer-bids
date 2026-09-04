@@ -511,12 +511,121 @@ def _run_mrtm_surface(
     logger.debug(f"{method.upper()} {hemi} surface fitting complete: {output_dir}")
 
 
-def _extract_ref_value_at_frame(
+def _read_frame_times(tacs_file: Path) -> tuple[list[float], list[float]]:
+    """
+    Read the ``frame_start`` / ``frame_end`` columns from a petprep tacs.tsv.
+
+    These are the only source of frame timing in petsurfer-km; the PET JSON
+    sidecar is never consulted.
+
+    Returns:
+        (starts, ends) in seconds, one entry per frame.
+    """
+    with open(tacs_file) as f:
+        header = f.readline().rstrip("\n").split("\t")
+        try:
+            fs_idx = header.index("frame_start")
+            fe_idx = header.index("frame_end")
+        except ValueError:
+            raise RuntimeError(
+                f"Cannot find frame_start/frame_end columns in {tacs_file}"
+            )
+        starts: list[float] = []
+        ends: list[float] = []
+        for line in f:
+            if not line.strip():
+                continue
+            fields = line.rstrip("\n").split("\t")
+            starts.append(float(fields[fs_idx]))
+            ends.append(float(fields[fe_idx]))
+
+    return starts, ends
+
+
+def _weighted_mean(values: list[float], weights: list[float]) -> float:
+    """Weighted mean of ``values``; ``weights`` is assumed to sum to 1."""
+    return sum(v * w for v, w in zip(values, weights))
+
+
+def _write_suvr_frame_weights(
+    inputs: InputGroup,
     temps: dict[str, Path],
-    frame_idx: int,
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    args: Namespace,
+) -> list[float]:
+    """
+    Build the frame-duration weight vector defining the SUVR window.
+
+    The weight of frame ``i`` is its duration divided by the total duration of
+    the requested window, and 0 for frames outside the window, so the weights
+    sum to 1 and a weighted sum over frames is the duration-weighted mean.
+    Taking the ratio of two such means is equivalent to the AUC(t1..t2) ratio
+    computed by Turku's dftratio / imgratio, since the total duration cancels.
+
+    A single ``--suvr-frame`` yields a weight of exactly 1.0 on that frame, so
+    the result is identical to plain single-frame selection.
+
+    Output: suvr-frame-weights.dat, one float per frame, one per line. This is
+    the format mri_concat --w expects (plain numbers, no header, no trailing
+    blank line), and mri_concat errors out if its length does not match the
+    frame count of the 4D PET.
+
+    Adds to temps:
+        suvr_weights: Path to suvr-frame-weights.dat
+        suvr_time_window: (start, end) of the window in seconds
+
+    Returns:
+        The weight vector.
+    """
+    frames = sorted(args.suvr_frame)
+    starts, ends = _read_frame_times(inputs.tacs)
+    durations = [e - s for s, e in zip(starts, ends)]
+    nframes = len(durations)
+
+    out_of_range = [f for f in frames if f >= nframes]
+    if out_of_range:
+        raise RuntimeError(
+            f"--suvr-frame {out_of_range} out of range; "
+            f"{inputs.tacs.name} has {nframes} frames (valid 0..{nframes - 1})"
+        )
+
+    total_duration = sum(durations[f] for f in frames)
+    if total_duration <= 0:
+        raise RuntimeError(
+            f"--suvr-frame {frames} selects frames with a total duration of "
+            f"{total_duration}s; cannot compute a weighted average"
+        )
+
+    weights = [0.0] * nframes
+    for f in frames:
+        weights[f] = durations[f] / total_duration
+
+    output_file = workdir / "suvr-frame-weights.dat"
+    output_file.write_text("\n".join(f"{w:.10f}" for w in weights) + "\n")
+
+    time_window = (starts[frames[0]], ends[frames[-1]])
+    temps["suvr_weights"] = output_file
+    temps["suvr_time_window"] = time_window
+
+    description = (
+        f"Compute SUVR frame-duration weights for frame(s) "
+        f"{', '.join(str(f) for f in frames)} (t = {time_window[0]:g}"
+        f"\u2013{time_window[1]:g} s)"
+    )
+    command_history.append((f"# {description} -> {output_file}", description))
+    logger.debug(f"SUVR frame weights written to: {output_file}")
+
+    return weights
+
+
+def _extract_ref_value_over_frames(
+    temps: dict[str, Path],
+    weights: list[float],
 ) -> float:
     """
-    Read the scalar reference-TAC value at ``frame_idx`` from ref-tac-petsurfer.dat.
+    Compute the scalar reference value: the weighted average of the reference
+    TAC over the SUVR window.
 
     The petsurfer ref-tac file is one float per line, no header (see
     tsv2petsurfer.py with --roiavg). Stores the value in ``temps["suvr_ref_value"]``.
@@ -525,15 +634,21 @@ def _extract_ref_value_at_frame(
     with open(ref_tac_file) as f:
         values = [float(line.strip()) for line in f if line.strip()]
 
-    if frame_idx < 0 or frame_idx >= len(values):
+    if len(values) != len(weights):
         raise RuntimeError(
-            f"--suvr-frame {frame_idx} out of range; "
-            f"reference TAC has {len(values)} frames (valid 0..{len(values) - 1})"
+            f"Reference TAC {ref_tac_file.name} has {len(values)} frames but the "
+            f"PET TAC table has {len(weights)}; cannot compute the SUVR reference"
         )
 
-    value = values[frame_idx]
+    value = _weighted_mean(values, weights)
+    if value == 0:
+        raise RuntimeError(
+            f"Reference value over the SUVR window is zero ({ref_tac_file}); "
+            "cannot compute SUVR"
+        )
+
     temps["suvr_ref_value"] = value
-    logger.debug(f"Reference value at frame {frame_idx}: {value}")
+    logger.debug(f"Reference value over SUVR window: {value}")
     return value
 
 
@@ -547,11 +662,19 @@ def _run_suvr(
     args: Namespace,
 ) -> None:
     """
-    Compute SUVR maps from a single PET frame divided by the reference-TAC
-    value at the same frame. Inputs are the already-smoothed PET volumes
-    produced by step02/step03, so --vol-fwhm / --surf-fwhm are honored.
+    Compute SUVR as the frame-duration-weighted average of the PET signal over
+    the frames selected by --suvr-frame, divided by the same weighted average
+    of the reference TAC.
+
+    ROI values come from the petprep ROI TACs, the same source every other
+    method's ROI results are derived from. The volume and surface inputs are
+    the already-smoothed PET produced by step02/step03, so --vol-fwhm /
+    --surf-fwhm are honored.
     """
-    ref_value = _extract_ref_value_at_frame(temps, args.suvr_frame)
+    weights = _write_suvr_frame_weights(inputs, temps, workdir, command_history, args)
+    ref_value = _extract_ref_value_over_frames(temps, weights)
+
+    _run_suvr_roi(temps, workdir, command_history, weights, ref_value)
 
     if not args.no_vol and inputs.has_volumetric():
         _run_suvr_volume(temps, workdir, command_history, args, ref_value)
@@ -560,6 +683,66 @@ def _run_suvr(
         for hemi in args.hemispheres:
             if inputs.has_surface(hemi):
                 _run_suvr_surface(hemi, temps, workdir, command_history, args, ref_value)
+
+
+def _run_suvr_roi(
+    temps: dict[str, Path],
+    workdir: Path,
+    command_history: list[tuple[str, str]],
+    weights: list[float],
+    ref_value: float,
+) -> None:
+    """
+    SUVR ROI-level values.
+
+    The counterpart of _run_mrtm_roi / _run_invasive_roi, but SUVR needs no
+    fit: each ROI TAC in roi-tacs-petsurfer.dat is averaged over the SUVR
+    window and divided by the reference value.
+
+    Output: suvr.roi/suvr.dat, two whitespace-separated columns (ROI, SUVR),
+    the same shape as logan.roi/vt.dat.
+
+    Adds to temps:
+        suvr_roi_dir: Path to suvr.roi/ output directory
+    """
+    output_dir = workdir / "suvr.roi"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / "suvr.dat"
+
+    roi_tacs = temps["roi_tacs"]
+    with open(roi_tacs) as f:
+        # tsv2petsurfer --all writes a trailing tab on every row
+        header = [c for c in f.readline().rstrip("\n").split("\t") if c]
+        rows = [
+            [float(v) for v in line.rstrip("\n").split("\t") if v]
+            for line in f
+            if line.strip()
+        ]
+
+    if len(rows) != len(weights):
+        raise RuntimeError(
+            f"ROI TAC table {roi_tacs.name} has {len(rows)} frames but the PET "
+            f"TAC table has {len(weights)}; cannot compute ROI SUVR"
+        )
+
+    # First column is frame_start (see tsv2petsurfer --all), not an ROI
+    lines = []
+    for col, roi in enumerate(header[1:], start=1):
+        tac = [row[col] for row in rows]
+        lines.append(f"{roi:<34s}{_weighted_mean(tac, weights) / ref_value:.5f}")
+
+    output_file.write_text("\n".join(lines) + "\n")
+
+    description = "SUVR ROI-level values (weighted frame average / reference)"
+    command_history.append((f"# {description} -> {output_file}", description))
+
+    temps["suvr_roi_dir"] = output_dir
+    logger.debug(f"SUVR ROI values written to: {output_file}")
+
+
+def _suvr_frame_label(args: Namespace) -> str:
+    """Human-readable frame list for command descriptions."""
+    return ", ".join(str(f) for f in sorted(args.suvr_frame))
 
 
 def _run_suvr_volume(
@@ -571,8 +754,8 @@ def _run_suvr_volume(
 ) -> None:
     """
     SUVR volumetric pipeline:
-      1. mri_convert --frame N <smoothed_4d> <frame3d>
-      2. fscalc <frame3d> div <ref_value> --o <suvr_unmasked>
+      1. mri_concat --i <smoothed_4d> --w <weights> --sum --o <frames_wmean>
+      2. fscalc <frames_wmean> div <ref_value> --o <suvr_unmasked>
       3. mri_mask <suvr_unmasked> <mni_mask> <suvr.nii.gz>
 
     Adds to temps:
@@ -582,30 +765,34 @@ def _run_suvr_volume(
     output_dir = workdir / f"suvr.mni.sm{fwhm_str}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    frame3d = output_dir / "frame.nii.gz"
+    frames_wmean = output_dir / "frames.wmean.nii.gz"
     suvr_unmasked = output_dir / "suvr_unmasked.nii.gz"
     suvr = output_dir / "suvr.nii.gz"
 
-    # Step 1: extract single frame
+    # Step 1: weighted average over the SUVR window
     cmd = [
-        "mri_convert",
-        "--frame", str(args.suvr_frame),
-        str(temps["mni_smoothed"]),
-        str(frame3d),
+        "mri_concat",
+        "--i", str(temps["mni_smoothed"]),
+        "--w", str(temps["suvr_weights"]),
+        "--sum",
+        "--o", str(frames_wmean),
     ]
-    description = f"Extract frame {args.suvr_frame} from MNI volume for SUVR"
+    description = (
+        f"Weighted average of frame(s) {_suvr_frame_label(args)} "
+        f"from MNI volume for SUVR"
+    )
     result = run_command(cmd, description)
     command_history.append((result.command, description))
-    if result.exit_code != 0 or not frame3d.exists():
-        raise RuntimeError(f"Failed to extract SUVR frame: {result.stderr}")
+    if result.exit_code != 0 or not frames_wmean.exists():
+        raise RuntimeError(f"Failed to average SUVR frames: {result.stderr}")
 
     # Step 2: divide by reference value
     cmd = [
         "fscalc",
-        str(frame3d), "div", str(ref_value),
+        str(frames_wmean), "div", str(ref_value),
         "--o", str(suvr_unmasked),
     ]
-    description = f"Divide MNI frame by reference value ({ref_value:g}) for SUVR"
+    description = f"Divide MNI weighted average by reference value ({ref_value:g}) for SUVR"
     result = run_command(cmd, description)
     command_history.append((result.command, description))
     if result.exit_code != 0 or not suvr_unmasked.exists():
@@ -638,8 +825,8 @@ def _run_suvr_surface(
 ) -> None:
     """
     SUVR surface pipeline (no masking step):
-      1. mri_convert --frame N <smoothed_surf> <frame3d>
-      2. fscalc <frame3d> div <ref_value> --o <suvr.nii.gz>
+      1. mri_concat --i <smoothed_surf> --w <weights> --sum --o <frames_wmean>
+      2. fscalc <frames_wmean> div <ref_value> --o <suvr.nii.gz>
 
     Adds to temps:
         suvr_surf_<hemi>_dir: Path to suvr.fsaverage.<hemi>.sm<NN>/ output directory
@@ -648,27 +835,36 @@ def _run_suvr_surface(
     output_dir = workdir / f"suvr.fsaverage.{hemi}.sm{fwhm_str}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    frame3d = output_dir / "frame.nii.gz"
+    frames_wmean = output_dir / "frames.wmean.nii.gz"
     suvr = output_dir / "suvr.nii.gz"
 
     cmd = [
-        "mri_convert",
-        "--frame", str(args.suvr_frame),
-        str(temps[f"surf_smoothed_{hemi}"]),
-        str(frame3d),
+        "mri_concat",
+        "--i", str(temps[f"surf_smoothed_{hemi}"]),
+        "--w", str(temps["suvr_weights"]),
+        "--sum",
+        "--o", str(frames_wmean),
     ]
-    description = f"Extract frame {args.suvr_frame} from {hemi} surface for SUVR"
+    description = (
+        f"Weighted average of frame(s) {_suvr_frame_label(args)} "
+        f"from {hemi} surface for SUVR"
+    )
     result = run_command(cmd, description)
     command_history.append((result.command, description))
-    if result.exit_code != 0 or not frame3d.exists():
-        raise RuntimeError(f"Failed to extract SUVR {hemi} surface frame: {result.stderr}")
+    if result.exit_code != 0 or not frames_wmean.exists():
+        raise RuntimeError(
+            f"Failed to average SUVR {hemi} surface frames: {result.stderr}"
+        )
 
     cmd = [
         "fscalc",
-        str(frame3d), "div", str(ref_value),
+        str(frames_wmean), "div", str(ref_value),
         "--o", str(suvr),
     ]
-    description = f"Divide {hemi} surface frame by reference value ({ref_value:g}) for SUVR"
+    description = (
+        f"Divide {hemi} surface weighted average by reference value "
+        f"({ref_value:g}) for SUVR"
+    )
     result = run_command(cmd, description)
     command_history.append((result.command, description))
     if result.exit_code != 0 or not suvr.exists():

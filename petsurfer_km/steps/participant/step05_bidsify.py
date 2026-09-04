@@ -207,9 +207,13 @@ def _build_sidecar(
         else:
             sidecar["ReferenceRegion"] = args.ref_roi
 
-    # SUVR: frame index used
+    # SUVR: frames used and the time window they span
     if method == "suvr":
-        sidecar["SUVRFrameIndex"] = args.suvr_frame
+        sidecar["SUVRFrames"] = sorted(args.suvr_frame)
+        window = temps.get("suvr_time_window")
+        if window is not None:
+            sidecar["SUVRTimeWindow"] = [window[0], window[1]]
+            sidecar["SUVRTimeWindowUnits"] = "s"
 
     # MRTM2: k2prime input value
     if method == "mrtm2" and "k2prime" in temps:

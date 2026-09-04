@@ -344,24 +344,31 @@ def _build_summary_html(
         else:
             _row("Reference region(s)", ", ".join(args.ref_roi))
 
-    # SUVR frame (annotate with frame_start/frame_end from the source TSV if possible)
+    # SUVR frame(s), annotated with the time window they span
     if "suvr" in methods_run:
-        frame_label = str(args.suvr_frame)
-        tacs_src = inputs.ref_tacs or inputs.tacs
-        if tacs_src is not None:
-            try:
-                with open(tacs_src) as f:
-                    header = f.readline().strip().split("\t")
-                    fs_idx = header.index("frame_start")
-                    fe_idx = header.index("frame_end")
-                    data_rows = [line.strip().split("\t") for line in f if line.strip()]
-                if 0 <= args.suvr_frame < len(data_rows):
-                    row = data_rows[args.suvr_frame]
-                    start, end = row[fs_idx], row[fe_idx]
-                    frame_label = f"{args.suvr_frame} (t = {start}–{end} s)"
-            except (OSError, ValueError, IndexError):
-                pass
-        _row("SUVR frame", frame_label)
+        frames = sorted(args.suvr_frame)
+        frame_label = ", ".join(str(f) for f in frames)
+        window = temps.get("suvr_time_window")
+        if window is None:
+            # step04 did not run (or failed early); fall back to the source TSV
+            tacs_src = inputs.ref_tacs or inputs.tacs
+            if tacs_src is not None:
+                try:
+                    with open(tacs_src) as f:
+                        header = f.readline().strip().split("\t")
+                        fs_idx = header.index("frame_start")
+                        fe_idx = header.index("frame_end")
+                        data_rows = [line.strip().split("\t") for line in f if line.strip()]
+                    if frames and frames[-1] < len(data_rows):
+                        window = (
+                            float(data_rows[frames[0]][fs_idx]),
+                            float(data_rows[frames[-1]][fe_idx]),
+                        )
+                except (OSError, ValueError, IndexError):
+                    pass
+        if window is not None:
+            frame_label = f"{frame_label} (t = {window[0]:g}–{window[1]:g} s)"
+        _row(f"SUVR frame{'s' if len(frames) > 1 else ''}", frame_label)
 
     # High-binding region (MRTM2)
     if "mrtm2" in methods_run:

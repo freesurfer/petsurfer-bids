@@ -39,6 +39,17 @@ def non_negative_float(value: str) -> float:
     return fvalue
 
 
+def non_negative_int(value: str) -> int:
+    """Validate non-negative integer."""
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid integer: {value}")
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(f"Must be non-negative: {value}")
+    return ivalue
+
+
 def comma_separated_list(value: str) -> list[str]:
     """Parse comma-separated string into list."""
     return [item.strip() for item in value.split(",") if item.strip()]
@@ -61,7 +72,7 @@ Examples:
   petsurfer-km /data/bids /data/output participant --km-method mrtm1 mrtm2
   petsurfer-km /data/bids /data/output participant --km-method logan --tstar 30
   petsurfer-km /data/bids /data/output participant --km-method patlak --tstar 540
-  petsurfer-km /data/bids /data/output participant --km-method suvr --suvr-frame 5 --ref-roi-label semiovale
+  petsurfer-km /data/bids /data/output participant --km-method suvr --suvr-frame 5 6 7 --ref-roi-label semiovale
   petsurfer-km /data/bids /data/output participant --participant-label sub-01 sub-02
 """,
     )
@@ -110,11 +121,16 @@ Examples:
     )
     km_group.add_argument(
         "--suvr-frame",
-        type=int,
+        "--suvr-frames",
+        dest="suvr_frame",
+        nargs="+",
+        type=non_negative_int,
         metavar="INDEX",
         help=(
-            "0-indexed frame number from the (smoothed) PET 4D used to compute "
-            "SUVR. Required when --km-method includes suvr."
+            "0-indexed frame number(s) from the (smoothed) PET 4D defining the "
+            "SUVR window, e.g. '--suvr-frame 5' or '--suvr-frame 5 6 7'. When "
+            "several frames are given they are combined as a frame-duration-"
+            "weighted average. Required when --km-method includes suvr."
         ),
     )
     ref_roi_group = km_group.add_mutually_exclusive_group()
