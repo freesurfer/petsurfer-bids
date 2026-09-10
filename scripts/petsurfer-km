@@ -15,6 +15,7 @@ set bidsdir = ()
 set outdir = ()
 set analysislevel = ()
 set fslicense = ()
+set psdir = ()
 set LF = /dev/null
 set pskmargs = ()
 set container = apptainer
@@ -48,10 +49,13 @@ set min    = `date +%M`
 #========================================================
 #  -B ${work}:/work \
 
+set bindargs = (-B ${bidsdir}:/data/input:ro -B ${outdir}:/data/output -B ${fslicense}:/license.txt:ro)
+if($#psdir != 0) then
+  set bindargs = ($bindargs -B ${psdir}:/data/petsurferdir)
+endif
+
 set cmd = ($container run \
-  -B ${bidsdir}:/data/input:ro \
-  -B ${outdir}:/data/output \
-  -B ${fslicense}:/license.txt:ro \
+  $bindargs \
   --pwd /data/output \
   --env FS_LICENSE=/license.txt \
   $sif petsurfer-km /data/input /data/output $analysislevel $pskmargs)
@@ -120,6 +124,11 @@ while( $#argv != 0 )
     case "--fs-license":
       if($#argv < 1) goto arg1err;
       set fslicense = $argv[1]; shift;
+      breaksw
+
+    case "--petsurfer-dir":
+      if($#argv < 1) goto arg1err;
+      set psdir = $argv[1]; shift;
       breaksw
       
     case "--force":
@@ -198,6 +207,10 @@ if($status) then
   exit 1
 endif
 
+if($#sif == 0 && $?PETSURFER_SIF) then
+  set sif = $PETSURFER_SIF
+endif
+
 if($PrintHelp) then
   goto usage_exit;
 endif
@@ -244,6 +257,15 @@ foreach f ($bidsdir $sif $fslicense)
   echo "ERROR: cannot find $f"
   exit 1
 end
+
+if($#psdir != 0) then
+  if(! -e $psdir) then
+    echo "ERROR: --petsurfer-dir $psdir does not exist"
+    exit 1
+  endif
+  set psdir = `cd $psdir && pwd`
+  set pskmargs = ($pskmargs --petsurfer-dir /data/petsurferdir)
+endif
 
 goto check_params_return;
 ############--------------##################
