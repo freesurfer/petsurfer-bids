@@ -49,6 +49,7 @@ set min    = `date +%M`
 #========================================================
 #  -B ${work}:/work \
 
+mkdir -p $outdir
 set bindargs = (-B ${bidsdir}:/data/input:ro -B ${outdir}:/data/output -B ${fslicense}:/license.txt:ro)
 if($#psdir != 0) then
   set bindargs = ($bindargs -B ${psdir}:/data/petsurferdir)
