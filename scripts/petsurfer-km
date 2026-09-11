@@ -180,10 +180,12 @@ while( $#argv != 0 )
 
     case "--nocleanup":
       set cleanup = 0;
+      set pskmargs = ($pskmargs $flag)
       breaksw
 
     case "--cleanup":
       set cleanup = 1;
+      set pskmargs = ($pskmargs $flag)
       breaksw
 
     case "--debug":
