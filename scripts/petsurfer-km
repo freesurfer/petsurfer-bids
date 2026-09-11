@@ -262,7 +262,12 @@ if($UseContainer) then
         exit 1
       endif
     endif
-  endif  
+  endif
+else
+  # This is needed to find tsv2petsurfer, and maybe others.
+  # May need to put at the end of the path to prevent collisions
+  set psbindir = `dirname $PETSURFER_KM_BIN`
+  set path = ($path $psbindir)
 endif  
 
 if($#outdir == 0) then
