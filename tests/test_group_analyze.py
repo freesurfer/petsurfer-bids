@@ -162,6 +162,68 @@ class TestColumnConsistency:
         assert rows[2] == ["s1", "10.0", "20.0"]
 
 
+class TestNonROILabelsExcluded:
+    """Non-ROI label rows (e.g. frame_start/frame_end/Frame) must never be
+    emitted as predictor/measure columns in the group ROI table (issue #28).
+    """
+
+    def test_frame_start_excluded_mrtm1(self, tmp_path, caplog):
+        """Reproduce issue #28: MRTM1 per-subject kinpar TSVs contain a
+        'frame_start\tR1' row (non-numeric value 'R1'). The merged ROI table
+        must exclude this column entirely so mri_glmfit does not fail on a
+        non-numeric predictor/measure.
+        """
+        rows = _run(
+            [
+                "frame_start\tR1\nr1\t1.0\nr2\t2.0\n",
+                "frame_start\tR1\nr1\t10.0\nr2\t20.0\n",
+            ],
+            tmp_path,
+            participant_ids=["01", "02"],
+        )
+        header = rows[0]
+        assert "frame_start" not in header
+        assert header == ["Subject", "r1", "r2"]
+        assert rows[1] == ["01", "1.0", "2.0"]
+        assert rows[2] == ["02", "10.0", "20.0"]
+        # No non-numeric value anywhere in the emitted data rows
+        for row in rows[1:]:
+            for val in row[1:]:
+                float(val)  # raises if non-numeric
+
+    def test_frame_end_and_frame_excluded(self, tmp_path):
+        rows = _run(
+            [
+                "frame_start\tR1\nframe_end\t90.0\nFrame\t1\nr1\t1.0\n",
+                "frame_start\tR1\nframe_end\t90.0\nFrame\t1\nr1\t10.0\n",
+            ],
+            tmp_path,
+            participant_ids=["A", "B"],
+        )
+        assert rows[0] == ["Subject", "r1"]
+
+    def test_stray_non_numeric_roi_column_dropped_with_warning(self, tmp_path, caplog):
+        """A genuinely non-numeric ROI value (not one of the known
+        FreeSurfer labels) should also be dropped, with a non-fatal warning,
+        rather than crash or propagate into the GLM input table."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="petsurfer_km")
+        rows = _run(
+            [
+                "r1\t1.0\nbadroi\tNotANumber\n",
+                "r1\t10.0\nbadroi\tNotANumber\n",
+            ],
+            tmp_path,
+            participant_ids=["A", "B"],
+        )
+        assert rows[0] == ["Subject", "r1"]
+        assert any(
+            "badroi" in rec.message and "non-numeric" in rec.message
+            for rec in caplog.records
+        )
+
+
 class TestLengthMismatch:
     """tsvlist and participant_ids length mismatch should return without writing."""
 
