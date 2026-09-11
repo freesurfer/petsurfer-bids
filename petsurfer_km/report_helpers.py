@@ -12,7 +12,19 @@ import importlib.util
 import json
 import logging
 import shutil
+import signal
+import subprocess
+import sys
 from pathlib import Path
+
+# Figure rendering (nilearn's plot_stat_map / plot_surf_stat_map) has been
+# observed to crash with a native SIGABRT (heap corruption in libffi/ctypes
+# during ctypes-object cleanup) on some Python builds. A hard process abort
+# cannot be caught with a Python try/except, so the actual rendering is run
+# in an isolated subprocess (see ``_run_figure_worker``): a crash there is
+# reported back as a non-zero/negative return code and logged as a warning
+# by the caller, instead of killing the whole report/pipeline process.
+_FIGURE_WORKER_TIMEOUT = 300  # seconds
 
 logger = logging.getLogger("petsurfer_km")
 
@@ -207,40 +219,171 @@ def robust_vlim(data, percentile: float = 98.0) -> tuple[float, float] | None:
     return vmin, vmax
 
 
+def _render_volume_figure_impl(
+    stat_map: str, template: str | None, output_path: str, meas: str
+) -> None:
+    """Actual nilearn rendering logic for a volumetric stat map.
+
+    Runs inside the isolated worker subprocess spawned by
+    ``_run_figure_worker`` -- keep this function free of any state shared
+    with the parent process.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import nibabel as nib
+    import numpy as np
+    from nilearn.plotting import plot_stat_map
+
+    img = nib.load(stat_map)
+    data = np.asarray(img.dataobj)
+    vlim = robust_vlim(data)
+
+    kwargs: dict = {
+        "stat_map_img": stat_map,
+        "display_mode": "z",
+        "cut_coords": 7,
+        "title": meas,
+        "colorbar": True,
+        "output_file": output_path,
+    }
+    if template is not None:
+        kwargs["bg_img"] = template
+    if vlim is not None:
+        kwargs["vmax"] = max(abs(vlim[0]), abs(vlim[1]))
+
+    plot_stat_map(**kwargs)
+
+
+def _render_surface_figure_impl(
+    stat_map: str, hemi: str, output_path: str, meas: str
+) -> None:
+    """Actual nilearn rendering logic for a surface stat map.
+
+    Runs inside the isolated worker subprocess spawned by
+    ``_run_figure_worker`` -- keep this function free of any state shared
+    with the parent process.
+
+    PNG is used instead of SVG because the full-resolution fsaverage mesh
+    (163 842 vertices) produces SVG files > 100 MB.
+
+    Our surface parametric maps are FreeSurfer NIfTI (N_vertices x 1 x 1).
+    We load with nibabel, flatten, and pass to nilearn's
+    ``plot_surf_stat_map``.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import nibabel as nib
+    import numpy as np
+    from nilearn.datasets import fetch_surf_fsaverage
+    from nilearn.plotting import plot_surf_stat_map
+
+    fsaverage = fetch_surf_fsaverage(mesh="fsaverage")
+
+    # Load surface data: FreeSurfer NIfTI → flat array
+    img = nib.load(stat_map)
+    data = np.asarray(img.dataobj).ravel()
+
+    # Robust display range (same logic as volumetric)
+    vlim = robust_vlim(data)
+
+    # nilearn hemisphere keys
+    if hemi == "lh":
+        mesh_key = "pial_left"
+        bg_key = "sulc_left"
+    else:
+        mesh_key = "pial_right"
+        bg_key = "sulc_right"
+
+    fig, axes = plt.subplots(
+        1, 2, figsize=(12, 5),
+        subplot_kw={"projection": "3d"},
+    )
+
+    surf_kwargs: dict = {
+        "surf_mesh": fsaverage[mesh_key],
+        "stat_map": data,
+        "bg_map": fsaverage[bg_key],
+        "hemi": ("left" if hemi == "lh" else "right"),
+    }
+    if vlim is not None:
+        surf_kwargs["vmin"] = vlim[0]
+        surf_kwargs["vmax"] = vlim[1]
+
+    for ax, view in zip(axes, ["lateral", "medial"]):
+        plot_surf_stat_map(
+            **surf_kwargs,
+            view=view,
+            title=f"{meas} ({hemi.upper()}, {view})",
+            colorbar=(view == "lateral"),
+            axes=ax,
+        )
+
+    fig.savefig(output_path, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _run_figure_worker(payload: dict) -> None:
+    """Run one figure-rendering job in an isolated ``_figure_worker`` subprocess.
+
+    Raises ``RuntimeError`` on any failure (non-zero exit, crash signal, or
+    timeout) so callers can catch it and degrade gracefully (log a warning
+    and skip the figure) instead of losing the whole report/pipeline
+    process to a native crash.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "petsurfer_km._figure_worker"],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            timeout=_FIGURE_WORKER_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"figure worker timed out after {_FIGURE_WORKER_TIMEOUT}s"
+        ) from exc
+
+    if result.returncode == 0:
+        return
+
+    stderr_tail = result.stderr.strip()[-500:]
+    if result.returncode < 0:
+        try:
+            signame = signal.Signals(-result.returncode).name
+        except ValueError:
+            signame = str(-result.returncode)
+        raise RuntimeError(
+            f"figure worker crashed with signal {signame}: {stderr_tail}"
+        )
+    raise RuntimeError(
+        f"figure worker exited with code {result.returncode}: {stderr_tail}"
+    )
+
+
 def generate_volume_figure(
     stat_map: Path,
     template: Path | None,
     output_path: Path,
     meas: str,
 ) -> None:
-    """Render an axial mosaic of *stat_map* over the MNI template and save SVG."""
+    """Render an axial mosaic of *stat_map* over the MNI template and save SVG.
+
+    Rendering is delegated to an isolated subprocess (see
+    ``_run_figure_worker``) because nilearn/matplotlib have been observed to
+    crash the interpreter with a native SIGABRT on some Python builds; such
+    crashes cannot be caught in-process, so isolating them here keeps the
+    rest of report generation and the overall pipeline running.
+    """
     try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import nibabel as nib
-        import numpy as np
-        from nilearn.plotting import plot_stat_map
-
-        img = nib.load(str(stat_map))
-        data = np.asarray(img.dataobj)
-        vlim = robust_vlim(data)
-
-        kwargs: dict = {
-            "stat_map_img": str(stat_map),
-            "display_mode": "z",
-            "cut_coords": 7,
-            "title": meas,
-            "colorbar": True,
-            "output_file": str(output_path),
-        }
-        if template is not None:
-            kwargs["bg_img"] = str(template)
-        if vlim is not None:
-            kwargs["vmax"] = max(abs(vlim[0]), abs(vlim[1]))
-
-        plot_stat_map(**kwargs)
+        _run_figure_worker({
+            "kind": "volume",
+            "stat_map": str(stat_map),
+            "template": str(template) if template is not None else None,
+            "output_path": str(output_path),
+            "meas": meas,
+        })
         logger.debug(f"Volume figure saved: {output_path}")
-
     except Exception as exc:
         logger.warning(f"Could not generate volume figure {output_path.name}: {exc}")
 
@@ -259,60 +402,21 @@ def generate_surface_figure(
     Our surface parametric maps are FreeSurfer NIfTI (N_vertices x 1 x 1).
     We load with nibabel, flatten, and pass to nilearn's
     ``plot_surf_stat_map``.
+
+    Rendering is delegated to an isolated subprocess (see
+    ``_run_figure_worker``) because nilearn/matplotlib have been observed to
+    crash the interpreter with a native SIGABRT on some Python builds; such
+    crashes cannot be caught in-process, so isolating them here keeps the
+    rest of report generation and the overall pipeline running.
     """
     try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        import nibabel as nib
-        import numpy as np
-        from nilearn.datasets import fetch_surf_fsaverage
-        from nilearn.plotting import plot_surf_stat_map
-
-        fsaverage = fetch_surf_fsaverage(mesh="fsaverage")
-
-        # Load surface data: FreeSurfer NIfTI → flat array
-        img = nib.load(str(stat_map))
-        data = np.asarray(img.dataobj).ravel()
-
-        # Robust display range (same logic as volumetric)
-        vlim = robust_vlim(data)
-
-        # nilearn hemisphere keys
-        if hemi == "lh":
-            mesh_key = "pial_left"
-            bg_key = "sulc_left"
-        else:
-            mesh_key = "pial_right"
-            bg_key = "sulc_right"
-
-        fig, axes = plt.subplots(
-            1, 2, figsize=(12, 5),
-            subplot_kw={"projection": "3d"},
-        )
-
-        surf_kwargs: dict = {
-            "surf_mesh": fsaverage[mesh_key],
-            "stat_map": data,
-            "bg_map": fsaverage[bg_key],
-            "hemi": ("left" if hemi == "lh" else "right"),
-        }
-        if vlim is not None:
-            surf_kwargs["vmin"] = vlim[0]
-            surf_kwargs["vmax"] = vlim[1]
-
-        for ax, view in zip(axes, ["lateral", "medial"]):
-            plot_surf_stat_map(
-                **surf_kwargs,
-                view=view,
-                title=f"{meas} ({hemi.upper()}, {view})",
-                colorbar=(view == "lateral"),
-                axes=ax,
-            )
-
-        fig.savefig(str(output_path), format="png", dpi=150, bbox_inches="tight")
-        plt.close(fig)
+        _run_figure_worker({
+            "kind": "surface",
+            "stat_map": str(stat_map),
+            "hemi": hemi,
+            "output_path": str(output_path),
+            "meas": meas,
+        })
         logger.debug(f"Surface figure saved: {output_path}")
-
     except Exception as exc:
         logger.warning(f"Could not generate surface figure {output_path.name}: {exc}")
