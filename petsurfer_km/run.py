@@ -95,7 +95,7 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         return
 
     # Check that tstar is provided for invasive methods (Logan, Patlak)
-    invasive_methods = {"logan", "logan-ma1", "patlak"}
+    invasive_methods = {"logan", "ma1", "patlak"}
     selected_invasive = invasive_methods.intersection(args.km_method)
     if selected_invasive and args.tstar is None:
         parser.error(
@@ -360,7 +360,7 @@ def run(args: argparse.Namespace) -> int:
         return run_group(args)
 
     # Determine if input function is required (for invasive methods: Logan, Patlak)
-    invasive_methods = {"logan", "logan-ma1", "patlak"}
+    invasive_methods = {"logan", "ma1", "patlak"}
     require_input_function = bool(invasive_methods.intersection(args.km_method))
 
     # SUVR requires --suvr-frame

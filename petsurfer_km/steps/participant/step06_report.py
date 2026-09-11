@@ -382,7 +382,7 @@ def _build_summary_html(
                 pass
 
     # Logan tstar
-    if any(m in ("logan", "logan-ma1") for m in methods_run):
+    if any(m in ("logan", "ma1") for m in methods_run):
         _row("t* (seconds)", str(args.tstar))
 
     _row("Volumetric smoothing (FWHM)", f"{args.vol_fwhm} mm")

@@ -81,7 +81,7 @@ def test_ma1_header_matches_logan(tmp_path: Path) -> None:
     src = tmp_path / "vt.dat"
     src.write_text("Left-Cerebellum-Cortex 1.23\n")
     dest = tmp_path / "ma1.tsv"
-    _convert_dat_to_tsv(src, dest, "logan-ma1")
+    _convert_dat_to_tsv(src, dest, "ma1")
     assert dest.read_text().splitlines()[0] == "ROI\tVT"
 
 

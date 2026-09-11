@@ -223,7 +223,7 @@ def _build_sidecar(
             sidecar["InputValuesLabels"] = ["k2prime"]
 
     # Invasive graphical methods (Logan, Patlak): tstar and blood type
-    if method in ("logan", "logan-ma1", "patlak"):
+    if method in ("logan", "ma1", "patlak"):
         sidecar["Tstar"] = args.tstar
         sidecar["BloodType"] = "arterial"
 

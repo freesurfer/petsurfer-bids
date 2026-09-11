@@ -26,7 +26,7 @@ class GroupContext:
     sessions: list[str]         # e.g. ["baseline"] or ["test", "retest"]
     paired: bool
     tracer: str                 # inferred, e.g. "11CPS13"
-    km_method: str              # single method, e.g. "logan-ma1"
+    km_method: str              # single method, e.g. "ma1"
     model: str                  # MODEL_LABELS[km_method], e.g. "MA1"
     meas: str                   # MEAS_LABELS[km_method], e.g. "VT"
     fsgd: BIDS_FSGD | None

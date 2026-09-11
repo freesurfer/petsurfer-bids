@@ -41,7 +41,7 @@ def _make_ctx(
     *,
     fsgd: BIDS_FSGD | None = None,
     fsgd_file: Path | None = None,
-    km_method: str = "logan-ma1",
+    km_method: str = "ma1",
     spaces: list[str] | None = None,
 ) -> GroupContext:
     from petsurfer_km.methods import MEAS_LABELS, MODEL_LABELS
@@ -160,7 +160,7 @@ def test_convert_gamma_table_to_tsv_osgm(tmp_path: Path) -> None:
         "Left-Lateral-Ventricle              1.932\n"
     )
     dest = tmp_path / "out.tsv"
-    _convert_gamma_table_to_tsv(src, dest, "logan-ma1", "osgm")
+    _convert_gamma_table_to_tsv(src, dest, "ma1", "osgm")
     lines = dest.read_text().splitlines()
     assert lines[0] == "ROI\tVT"
     assert lines[1] == "Left-Cerebral-White-Matter\t2.540"
@@ -175,7 +175,7 @@ def test_convert_gamma_table_to_tsv_picks_contrast_column(tmp_path: Path) -> Non
         "Left-Thalamus                     0.004  -2.775  0.083\n"
     )
     dest = tmp_path / "out.tsv"
-    _convert_gamma_table_to_tsv(src, dest, "logan-ma1", "sex-x-age")
+    _convert_gamma_table_to_tsv(src, dest, "ma1", "sex-x-age")
     lines = dest.read_text().splitlines()
     assert lines[0] == "ROI\tVT"
     assert lines[1] == "Left-Thalamus\t0.083"
@@ -194,7 +194,7 @@ def test_convert_gamma_table_missing_source_warns(
 ) -> None:
     dest = tmp_path / "out.tsv"
     with caplog.at_level(logging.WARNING):
-        _convert_gamma_table_to_tsv(tmp_path / "missing.dat", dest, "logan-ma1", "osgm")
+        _convert_gamma_table_to_tsv(tmp_path / "missing.dat", dest, "ma1", "osgm")
     assert not dest.exists()
     assert any("not found" in rec.message for rec in caplog.records)
 
@@ -206,7 +206,7 @@ def test_convert_gamma_table_contrast_not_in_header_warns(
     src.write_text("Subject                           osgm\nLeft-Thalamus 1.5\n")
     dest = tmp_path / "out.tsv"
     with caplog.at_level(logging.WARNING):
-        _convert_gamma_table_to_tsv(src, dest, "logan-ma1", "missing-contrast")
+        _convert_gamma_table_to_tsv(src, dest, "ma1", "missing-contrast")
     assert not dest.exists()
     assert any("not in" in rec.message for rec in caplog.records)
 

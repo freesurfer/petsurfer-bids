@@ -279,7 +279,7 @@ It assumes:
 
 ```
 petsurfer-km ~/datasets/ds004230 ~/datasets/petsurfer-bids/ds004230 participant \
-  --km-method logan-ma1 \
+  --km-method ma1 \
   --tstar 540
 ```
 
@@ -300,7 +300,7 @@ apptainer run \
   --pwd /data/output \
   ~/containers/petsurfer-bids-0.3.0.sif \
     petsurfer-km /data/input /data/output participant \
-      --km-method logan-ma1 \
+      --km-method ma1 \
       --tstar 540 \
 ```
 
@@ -320,7 +320,7 @@ petsurfer-km \
   group \
   --petsurfer-dir ~/datasets/petsurfer-bids/ds004230/derivatives/petsurfer \
   --session-label baseline \
-  --km-method logan-ma1 \
+  --km-method ma1 \
   --vol-fwhm 6 \
   --surf-fwhm 10 \
   --cmc 2 500 abs 2 .05

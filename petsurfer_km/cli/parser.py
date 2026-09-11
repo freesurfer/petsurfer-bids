@@ -104,7 +104,7 @@ Examples:
         help=(
             "Kinetic modeling method(s) to run. Multiple methods can be specified. "
             "Methods are always executed in order: suvr, mrtm1, mrtm2, logan, "
-            "logan-ma1, patlak. Note: mrtm2 requires mrtm1 output; specifying "
+            "ma1, patlak. Note: mrtm2 requires mrtm1 output; specifying "
             "mrtm2 automatically includes mrtm1. SUVR is not strictly a kinetic "
             "model but produces voxel-/surface-wise SUVR maps using the same "
             "reference region. Default: mrtm1"
@@ -116,7 +116,7 @@ Examples:
         metavar="SECONDS",
         help=(
             "Time to equilibration (t*) in seconds for Logan and Patlak graphical "
-            "analysis. Required when using logan, logan-ma1, or patlak methods."
+            "analysis. Required when using logan, ma1, or patlak methods."
         ),
     )
     km_group.add_argument(

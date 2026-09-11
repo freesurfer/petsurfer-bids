@@ -8,7 +8,7 @@ from pathlib import Path
 
 from petsurfer_km.execution import run_command
 from petsurfer_km.inputs import InputGroup
-from petsurfer_km.methods import KM_METHOD_ORDER
+from petsurfer_km.methods import GLMFIT_FLAG, KM_METHOD_ORDER
 
 logger = logging.getLogger("petsurfer_km")
 
@@ -25,7 +25,7 @@ def run_kinetic_modeling(
     """
     Run kinetic modeling for all requested methods.
 
-    Methods are executed in canonical order (mrtm1, mrtm2, logan, logan-ma1,
+    Methods are executed in canonical order (mrtm1, mrtm2, logan, ma1,
     patlak) regardless of the order specified on the command line. This
     ensures dependencies are satisfied (e.g., MRTM2 requires MRTM1's k2prime
     output).
@@ -82,7 +82,7 @@ def run_kinetic_modeling(
             _run_mrtm2(subject, session, inputs, temps, workdir, command_history, args)
         elif method == "logan":
             _run_logan(subject, session, inputs, temps, workdir, command_history, args)
-        elif method == "logan-ma1":
+        elif method == "ma1":
             _run_logan_ma1(subject, session, inputs, temps, workdir, command_history, args)
         elif method == "patlak":
             _run_patlak(subject, session, inputs, temps, workdir, command_history, args)
@@ -901,7 +901,7 @@ def _run_invasive_roi(
     cmd = [
         "mri_glmfit",
         "--table", str(temps["roi_tacs"]),
-        f"--{method}", str(aif), str(temps["frametime"]), str(tstar),
+        f"--{GLMFIT_FLAG.get(method, method)}", str(aif), str(temps["frametime"]), str(tstar),
         "--o", str(output_dir),
         "--nii.gz",
     ]
@@ -947,7 +947,7 @@ def _run_invasive_volume(
     cmd = [
         "mri_glmfit",
         "--y", str(temps["mni_smoothed"]),
-        f"--{method}", str(aif), str(temps["frametime"]), str(tstar),
+        f"--{GLMFIT_FLAG.get(method, method)}", str(aif), str(temps["frametime"]), str(tstar),
         "--mask", str(temps["mni_mask"]),
         "--o", str(output_dir),
         "--nii.gz",
@@ -996,7 +996,7 @@ def _run_invasive_surface(
         "mri_glmfit",
         "--y", str(temps[f"surf_smoothed_{hemi}"]),
         "--surf", "fsaverage", hemi,
-        f"--{method}", str(aif), str(temps["frametime"]), str(tstar),
+        f"--{GLMFIT_FLAG.get(method, method)}", str(aif), str(temps["frametime"]), str(tstar),
         "--o", str(output_dir),
         "--nii.gz",
     ]
@@ -1104,9 +1104,9 @@ def _run_logan_ma1(
     Requires arterial input function from bloodstream.
 
     Adds to temps:
-        logan-ma1_roi_dir: Path to logan-ma1.roi/ output directory
-        logan-ma1_mni_dir: Path to logan-ma1.mni.sm<NN>/ output directory (if volumetric)
-        logan-ma1_surf_<hemi>_dir: Path to logan-ma1.fsaverage.<hemi>.sm<NN>/ (if surface)
+        ma1_roi_dir: Path to ma1.roi/ output directory
+        ma1_mni_dir: Path to ma1.mni.sm<NN>/ output directory (if volumetric)
+        ma1_surf_<hemi>_dir: Path to ma1.fsaverage.<hemi>.sm<NN>/ (if surface)
     """
     if not inputs.has_input_function():
         raise RuntimeError("Logan-MA1 requires arterial input function")
@@ -1115,7 +1115,7 @@ def _run_logan_ma1(
 
     # Operation 7.1: ROI-level fitting
     _run_invasive_roi(
-        method="logan-ma1",
+        method="ma1",
         aif=aif,
         tstar=args.tstar,
         temps=temps,
@@ -1126,7 +1126,7 @@ def _run_logan_ma1(
     # Operation 7.2: MNI volume fitting
     if not args.no_vol and inputs.has_volumetric():
         _run_invasive_volume(
-            method="logan-ma1",
+            method="ma1",
             aif=aif,
             tstar=args.tstar,
             temps=temps,
@@ -1140,7 +1140,7 @@ def _run_logan_ma1(
         for hemi in args.hemispheres:
             if inputs.has_surface(hemi):
                 _run_invasive_surface(
-                    method="logan-ma1",
+                    method="ma1",
                     hemi=hemi,
                     aif=aif,
                     tstar=args.tstar,
