@@ -54,6 +54,15 @@ def _space_params(space: str, context: GroupContext, workdir: Path) -> _SpacePar
     )
 
 
+def _is_numeric(value: str) -> bool:
+    """Return True if *value* parses as a float (accepts 'NaN'/'nan' too)."""
+    try:
+        float(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def tsv2glmfit(
     tsvlist: list[str],
     outtable: str,
@@ -70,12 +79,23 @@ def tsv2glmfit(
     by row position) and missing ROIs are filled with NaN so every row has the
     same number of columns. ROIs not present in all subjects (any column
     containing NaN) are then pruned before the table is emitted.
+
+    Non-ROI rows such as ``frame_start``/``frame_end``/``Frame`` (FreeSurfer
+    table labels that should never be treated as ROI predictors/measures, see
+    issue #28) are skipped while reading. As a defense-in-depth guard, any
+    remaining column whose values are not all numeric across every subject is
+    also excluded (with a warning, not a fatal error) before the table is
+    written, since mri_glmfit requires an all-numeric input table.
     """
     if participant_ids is not None and len(tsvlist) != len(participant_ids):
         logger.error("tsv2glmfit: tsvlist length != subject list length")
         logger.error(f"  tsvlist length: {len(tsvlist)}")
         logger.error(f"  participant_ids length: {len(participant_ids)}")
         return
+
+    # Row labels that are known FreeSurfer table artifacts, not ROIs, and
+    # must never be treated as predictor/measure columns (issue #28).
+    _NON_ROI_LABELS = {"roi", "frame_start", "frame_end", "frame"}
 
     # First pass: read all TSVs into per-subject dicts and collect
     # the union of ROI names in first-appearance order.
@@ -96,7 +116,10 @@ def tsv2glmfit(
                 subj_id = f"s{k}"
             roi_dict: dict[str, str] = {}
             for row in tsv:
-                if not row or row[0] == "ROI":  # skip header row (issue #2)
+                if not row:
+                    continue
+                if row[0].strip().lower() in _NON_ROI_LABELS:
+                    # skip header row (issue #2) and non-ROI labels (issue #28)
                     continue
                 roi_dict[row[0]] = row[1]
                 if row[0] not in seen_rois:
@@ -116,6 +139,26 @@ def tsv2glmfit(
         i for i in range(len(all_roinames))
         if all(row[i + 1] != "NaN" for row in roitable)
     ]
+
+    # Guard: exclude any remaining column whose values are not all numeric
+    # (e.g. a stray non-ROI label that slipped through, or a genuinely
+    # non-numeric ROI value). This is a non-fatal safeguard: mri_glmfit
+    # requires an all-numeric table, so we drop the offending column and
+    # warn rather than let the GLM fit fail (issue #28).
+    numeric_keep = []
+    for i in keep:
+        values = [row[i + 1] for row in roitable]
+        if all(_is_numeric(v) for v in values):
+            numeric_keep.append(i)
+        else:
+            bad = next(v for v in values if not _is_numeric(v))
+            logger.warning(
+                f"tsv2glmfit: excluding non-numeric ROI column "
+                f"'{all_roinames[i]}' from group ROI table "
+                f"(example value: {bad!r})"
+            )
+    keep = numeric_keep
+
     roinames = ["Subject"] + [all_roinames[i] for i in keep]
     roitable = [[row[0]] + [row[i + 1] for i in keep] for row in roitable]
 

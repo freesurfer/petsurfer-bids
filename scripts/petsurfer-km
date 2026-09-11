@@ -15,9 +15,11 @@ set bidsdir = ()
 set outdir = ()
 set analysislevel = ()
 set fslicense = ()
+set psdir = ()
 set LF = /dev/null
 set pskmargs = ()
 set container = apptainer
+set UseContainer = 1
 
 set inputargs = ($argv);
 set PrintHelp = 0;
@@ -48,13 +50,22 @@ set min    = `date +%M`
 #========================================================
 #  -B ${work}:/work \
 
-set cmd = ($container run \
-  -B ${bidsdir}:/data/input:ro \
-  -B ${outdir}:/data/output \
-  -B ${fslicense}:/license.txt:ro \
-  --pwd /data/output \
-  --env FS_LICENSE=/license.txt \
-  $sif petsurfer-km /data/input /data/output $analysislevel $pskmargs)
+mkdir -p $outdir
+
+if($UseContainer) then
+  set bindargs = (-B ${bidsdir}:/data/input:ro -B ${outdir}:/data/output -B ${fslicense}:/license.txt:ro)
+  if($#psdir != 0) then
+    set bindargs = ($bindargs -B ${psdir}:/data/petsurferdir)
+  endif
+  set cmd = ($container run \
+    $bindargs \
+    --pwd /data/output \
+    --env FS_LICENSE=/license.txt \
+    $sif petsurfer-km /data/input /data/output $analysislevel $pskmargs)
+else
+  set cmd = ($PETSURFER_KM_BIN $bidsdir $outdir $analysislevel $pskmargs)
+endif
+    
 echo "--------------------------------------------------------"
 echo $cmd
 echo "--------------------------------------------------------"
@@ -121,12 +132,33 @@ while( $#argv != 0 )
       if($#argv < 1) goto arg1err;
       set fslicense = $argv[1]; shift;
       breaksw
+
+    case "--petsurfer-dir":
+      if($#argv < 1) goto arg1err;
+      set psdir = $argv[1]; shift;
+      breaksw
       
     case "--force":
      set ForceUpdate = 1
      breaksw
     case "--no-force":
      set ForceUpdate = 0
+     breaksw
+
+    case "--no-container":
+     set UseContainer = 0
+     if($?PETSURFER_KM_BIN == 0) then
+       echo "ERROR:  PETSURFER_KM_BIN env var does not exist, needed for --no-container"
+       exit 1
+     endif
+     if(! -e $PETSURFER_KM_BIN) then
+       echo "ERROR: $PETSURFER_KM_BIN does not exist, needed for --no-container"
+       exit 1
+     endif
+     if(! -x $PETSURFER_KM_BIN) then
+       echo "ERROR: $PETSURFER_KM_BIN is not executable, needed for --no-container"
+       exit 1
+     endif
      breaksw
 
     case "--log":
@@ -185,22 +217,51 @@ goto parse_args_return;
 ############--------------##################
 check_params:
 
-which $container >& /dev/null
-if($status) then
-  echo "ERROR: cannot find $container in your path, make sure it is installed on your system"
-  foreach c (apptainer singularity docker)
-    if($c == $container) continue
-    which $c >& /dev/null
-    if(! $status) then
-      echo "It looks like $c is installed on your system, try running with --$c"
-    endif
-  end
-  exit 1
-endif
-
 if($PrintHelp) then
   goto usage_exit;
 endif
+
+if($UseContainer) then
+  which $container >& /dev/null
+  if($status) then
+    echo "ERROR: cannot find $container in your path, make sure it is installed on your system"
+    foreach c (apptainer singularity docker)
+      if($c == $container) continue
+      which $c >& /dev/null
+      if(! $status) then
+        echo "It looks like $c is installed on your system, try running with --$c"
+      endif
+    end
+    exit 1
+  endif
+
+  if($#sif == 0 && $?PETSURFER_SIF) then
+    set sif = $PETSURFER_SIF
+  endif
+  if($#sif == 0) then
+    echo "ERROR: sif not passed or PETSURFER_SIF env var not defined"
+    echo "You can get it using one of these methods"
+    echo "apptainer pull ~/containers/petsurfer-bids-0.1.3.sif docker://freesurfer/petsurfer-bids:0.1.3"
+    echo "docker pull freesurfer/petsurfer-bids:0.2.3"
+    echo "singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3"
+    exit 1;
+  endif
+
+  if($#fslicense == 0) then
+    if($?FREESURFER_HOME == 0) then
+      echo "ERROR: no FreeSurfer license passed and FREESURFER_HOME not defined"
+      exit 1
+    endif
+    set fslicense = $FREESURFER_HOME/.license
+    if(! -e $fslicense) then
+      set fslicense = $FREESURFER_HOME/license
+      if(! -e $fslicense) then
+        echo "ERROR: no FreeSurfer license passed and cannot find $FREESURFER_HOME/.license or $FREESURFER_HOME/license"
+        exit 1
+      endif
+    endif
+  endif  
+endif  
 
 if($#outdir == 0) then
   echo "ERROR: must spec outdir"
@@ -215,35 +276,24 @@ if($#analysislevel == 0) then
   exit 1;
 endif
 
-if($#sif == 0) then
-  echo "ERROR: sif not passed or PETSURFER_SIF env var not defined"
-  echo "You can get it using one of these methods"
-  echo "apptainer pull ~/containers/petsurfer-bids-0.1.3.sif docker://freesurfer/petsurfer-bids:0.1.3"
-  echo "docker pull freesurfer/petsurfer-bids:0.2.3"
-  echo "singularity pull petsurfer-bids-0.2.1.sif docker://freesurfer/petsurfer-bids:0.2.3"
-  exit 1;
-endif
-
-if($#fslicense == 0) then
-  if($?FREESURFER_HOME == 0) then
-    echo "ERROR: no FreeSurfer license passed and FREESURFER_HOME not defined"
-    exit 1
-  endif
-  set fslicense = $FREESURFER_HOME/.license
-  if(! -e $fslicense) then
-    set fslicense = $FREESURFER_HOME/license
-    if(! -e $fslicense) then
-      echo "ERROR: no FreeSurfer license passed and cannot find $FREESURFER_HOME/.license or $FREESURFER_HOME/license"
-      exit 1
-    endif
-  endif
-endif  
-
 foreach f ($bidsdir $sif $fslicense)
   if(-e $f) continue
   echo "ERROR: cannot find $f"
   exit 1
 end
+
+if($#psdir != 0) then
+  if(! -e $psdir) then
+    echo "ERROR: --petsurfer-dir $psdir does not exist"
+    exit 1
+  endif
+  set psdir = `cd $psdir && pwd`
+  if($UseContainer) then
+    set pskmargs = ($pskmargs --petsurfer-dir /data/petsurferdir)
+  else
+    set pskmargs = ($pskmargs --petsurfer-dir $psdir)
+  endif
+endif
 
 goto check_params_return;
 ############--------------##################
@@ -266,11 +316,13 @@ usage_exit:
   echo "    bidsdir is the path to the BIDS directory with derivatives/{petprep,bloodstream}"
   echo "    outdir is the path to the output, eg, derivativeds/petsurfer"
   echo "    analysis_level is either particpant or group"
+  echo " --petsurfer-dir /path/to/petsurfer : by default uses bidsdir/derivatives/petsurfer"
   echo " --sif petsurfer.sif : singularity image file (or set PETSURFER_SIF env var)"
   echo " --singularity : use singularity instead of $container"
   echo " --docker : use docker instead of $container"
   echo " --fs-license fs-licensepath : if it can't be found in FREESURFER_HOME"
   echo " --help (needs SIF via PETSURFER_SIF or --sif)"
+  echo " --no-container : use raw python, must set PETSURFER_KM_BIN"
   echo ""
 
   if(! $PrintHelp) exit 1;
