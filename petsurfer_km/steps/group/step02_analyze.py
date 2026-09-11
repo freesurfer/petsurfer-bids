@@ -339,7 +339,7 @@ def run_group_analyze(
             cmd = (
                 f"mri_glmfit-sim --glmdir {glmdir} "
                 f"--cwp {args.cmc[4]} "
-                f"--perm {args.cmc[0]} {args.cmc[1]} {args.cmc[2]}"
+                f"--perm {args.cmc[1]} {args.cmc[0]} {args.cmc[2]}"
             )
             nspaces = int(args.cmc[3])
             if nspaces > 1:
