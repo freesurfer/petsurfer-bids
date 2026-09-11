@@ -148,10 +148,14 @@ def set_defaults(args: argparse.Namespace) -> argparse.Namespace:
     if args.work_dir is None:
         args.work_dir = Path(f"/tmp/petsurfer-km-{os.getpid()}")
 
-    # If mrtm2 is selected, ensure mrtm1 is also included (mrtm2 depends on mrtm1 output)
-    if "mrtm2" in args.km_method and "mrtm1" not in args.km_method:
-        logger.debug("Adding mrtm1 (required by mrtm2)")
-        args.km_method = ["mrtm1"] + args.km_method
+    # If mrtm2 is selected, ensure mrtm1 is also included (mrtm2 depends on mrtm1 output).
+    # This only applies to participant-level analysis: group-level analysis operates on
+    # a single already-computed method's ROI outputs and must keep exactly one km_method
+    # (see validate_args), so mrtm1 must not be auto-injected there.
+    if args.analysis_level == "participant":
+        if "mrtm2" in args.km_method and "mrtm1" not in args.km_method:
+            logger.debug("Adding mrtm1 (required by mrtm2)")
+            args.km_method = ["mrtm1"] + args.km_method
 
     # Handle hemisphere selection
     if not args.lh and not args.rh:
