@@ -235,3 +235,57 @@ class TestLengthMismatch:
         # Function returns early; out file should not exist
         import os
         assert not os.path.exists(out)
+
+
+class TestPairedDiff:
+    """Group-level --paired longitudinal analysis for the ROI space.
+
+    Reproduces the bug where the group ROI GLM failed for --paired because
+    tsv2glmfit received two TSV files per subject (session1, session2) but
+    only one participant_id per subject, tripping the length-mismatch guard
+    and never writing the ROI table (downstream mri_glmfit then failed on a
+    missing/empty file).
+    """
+
+    def test_paired_diff_one_row_per_subject(self, tmp_path):
+        # Two subjects, each with session1 and session2 ROI TSVs.
+        sub1_ses1 = tmp_path / "sub1_ses1.tsv"
+        sub1_ses2 = tmp_path / "sub1_ses2.tsv"
+        sub2_ses1 = tmp_path / "sub2_ses1.tsv"
+        sub2_ses2 = tmp_path / "sub2_ses2.tsv"
+        _write_tsv(sub1_ses1, [("roiA", "1.0"), ("roiB", "2.0")])
+        _write_tsv(sub1_ses2, [("roiA", "0.6"), ("roiB", "2.5")])
+        _write_tsv(sub2_ses1, [("roiA", "3.0"), ("roiB", "4.0")])
+        _write_tsv(sub2_ses2, [("roiA", "2.0"), ("roiB", "4.5")])
+
+        out = str(tmp_path / "merged.csv")
+        tsv2glmfit(
+            [str(sub1_ses1), str(sub1_ses2), str(sub2_ses1), str(sub2_ses2)],
+            out,
+            participant_ids=["sub1", "sub2"],
+            paired=True,
+        )
+
+        rows = _read_table(out)
+        # One row per subject (2), not per session (4).
+        assert len(rows) == 3  # header + 2 subjects
+        assert rows[0] == ["Subject", "roiA", "roiB"]
+        assert rows[1][0] == "sub1"
+        assert pytest.approx(float(rows[1][1])) == 1.0 - 0.6
+        assert pytest.approx(float(rows[1][2])) == 2.0 - 2.5
+        assert rows[2][0] == "sub2"
+        assert pytest.approx(float(rows[2][1])) == 3.0 - 2.0
+        assert pytest.approx(float(rows[2][2])) == 4.0 - 4.5
+
+    def test_paired_length_mismatch_still_guarded(self, tmp_path):
+        # 3 files but only 1 participant_id: not a multiple-of-2 relationship
+        # with participant_ids, should be rejected without writing.
+        p1 = tmp_path / "a.tsv"
+        p2 = tmp_path / "b.tsv"
+        p3 = tmp_path / "c.tsv"
+        for p in (p1, p2, p3):
+            p.write_text("roiA\t1.0\n")
+        out = str(tmp_path / "merged.csv")
+        tsv2glmfit([str(p1), str(p2), str(p3)], out, ["A"], paired=True)
+        import os
+        assert not os.path.exists(out)

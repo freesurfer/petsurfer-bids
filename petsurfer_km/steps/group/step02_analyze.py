@@ -63,10 +63,37 @@ def _is_numeric(value: str) -> bool:
         return False
 
 
+# Row labels that are known FreeSurfer table artifacts, not ROIs, and
+# must never be treated as predictor/measure columns (issue #28).
+_NON_ROI_LABELS = {"roi", "frame_start", "frame_end", "frame"}
+
+
+def _read_roi_dict(tsvfile: str) -> dict[str, str]:
+    """Read one per-subject ROI TSV/CSV file into ``{roi_name: value}``.
+
+    Skips header/non-ROI label rows (``roi``, ``frame_start``, ``frame_end``,
+    ``frame``; see issue #28).
+    """
+    _, file_extension = os.path.splitext(tsvfile)
+    delimiter = "," if file_extension == ".csv" else "\t"
+    roi_dict: dict[str, str] = {}
+    with open(tsvfile, "r") as fp:
+        tsv = csv.reader(fp, delimiter=delimiter, quotechar='"')
+        for row in tsv:
+            if not row:
+                continue
+            if row[0].strip().lower() in _NON_ROI_LABELS:
+                # skip header row (issue #2) and non-ROI labels (issue #28)
+                continue
+            roi_dict[row[0]] = row[1]
+    return roi_dict
+
+
 def tsv2glmfit(
     tsvlist: list[str],
     outtable: str,
     participant_ids: list[str] | None = None,
+    paired: bool = False,
 ) -> None:
     """Merge per-subject ROI TSV files into an aligned table for mri_glmfit.
 
@@ -74,6 +101,14 @@ def tsv2glmfit(
     the first column is the ROI name and the second is the value of interest.
     If *participant_ids* is passed, the subject name is placed as the first
     column.
+
+    If *paired* is True, *tsvlist* is expected to hold two files per subject
+    (session1, session2), in the same order as *participant_ids*, i.e.
+    ``[sub1-ses1, sub1-ses2, sub2-ses1, sub2-ses2, ...]``. The per-ROI
+    session1 - session2 difference is computed per subject (mirroring
+    ``mri_concat --paired-diff``'s "1-2, 3-4, ..." semantics used for the
+    voxel/surface spaces) and one row per subject is written, rather than one
+    row per session.
 
     Subjects may have different ROI sets. Values are aligned by ROI name (not
     by row position) and missing ROIs are filled with NaN so every row has the
@@ -87,44 +122,61 @@ def tsv2glmfit(
     also excluded (with a warning, not a fatal error) before the table is
     written, since mri_glmfit requires an all-numeric input table.
     """
-    if participant_ids is not None and len(tsvlist) != len(participant_ids):
+    if paired:
+        if participant_ids is None:
+            logger.error("tsv2glmfit: paired=True requires participant_ids")
+            return
+        if len(tsvlist) != 2 * len(participant_ids):
+            logger.error(
+                "tsv2glmfit: paired mode expects 2 files (session1, session2) "
+                "per subject"
+            )
+            logger.error(f"  tsvlist length: {len(tsvlist)}")
+            logger.error(
+                f"  participant_ids length: {len(participant_ids)} "
+                f"(expected {len(tsvlist) // 2})"
+            )
+            return
+    elif participant_ids is not None and len(tsvlist) != len(participant_ids):
         logger.error("tsv2glmfit: tsvlist length != subject list length")
         logger.error(f"  tsvlist length: {len(tsvlist)}")
         logger.error(f"  participant_ids length: {len(participant_ids)}")
         return
 
-    # Row labels that are known FreeSurfer table artifacts, not ROIs, and
-    # must never be treated as predictor/measure columns (issue #28).
-    _NON_ROI_LABELS = {"roi", "frame_start", "frame_end", "frame"}
-
-    # First pass: read all TSVs into per-subject dicts and collect
-    # the union of ROI names in first-appearance order.
+    # First pass: read all TSVs into per-subject dicts (differenced across
+    # sessions when paired) and collect the union of ROI names in
+    # first-appearance order.
     subj_data: list[tuple[str, dict[str, str]]] = []
     all_roinames: list[str] = []
     seen_rois: set[str] = set()
-    for k, tsvfile in enumerate(tsvlist):
-        _, file_extension = os.path.splitext(tsvfile)
-        if file_extension == ".csv":
-            delimiter = ","
-        if file_extension == ".tsv":
-            delimiter = "\t"
-        with open(tsvfile, "r") as fp:
-            tsv = csv.reader(fp, delimiter=delimiter, quotechar='"')
-            if participant_ids is not None:
-                subj_id = participant_ids[k]
-            else:
-                subj_id = f"s{k}"
-            roi_dict: dict[str, str] = {}
-            for row in tsv:
-                if not row:
+
+    if paired:
+        for k, subj_id in enumerate(participant_ids):
+            d1 = _read_roi_dict(tsvlist[2 * k])
+            d2 = _read_roi_dict(tsvlist[2 * k + 1])
+            diff_dict: dict[str, str] = {}
+            for roi, val1 in d1.items():
+                if roi not in d2:
                     continue
-                if row[0].strip().lower() in _NON_ROI_LABELS:
-                    # skip header row (issue #2) and non-ROI labels (issue #28)
-                    continue
-                roi_dict[row[0]] = row[1]
-                if row[0] not in seen_rois:
-                    seen_rois.add(row[0])
-                    all_roinames.append(row[0])
+                try:
+                    diff_dict[roi] = str(float(val1) - float(d2[roi]))
+                except (TypeError, ValueError):
+                    # Non-numeric value: carry the raw value through so the
+                    # numeric guard below excludes it (with a warning)
+                    # rather than diffing failing silently.
+                    diff_dict[roi] = val1
+                if roi not in seen_rois:
+                    seen_rois.add(roi)
+                    all_roinames.append(roi)
+            subj_data.append((subj_id, diff_dict))
+    else:
+        for k, tsvfile in enumerate(tsvlist):
+            subj_id = participant_ids[k] if participant_ids is not None else f"s{k}"
+            roi_dict = _read_roi_dict(tsvfile)
+            for roi in roi_dict:
+                if roi not in seen_rois:
+                    seen_rois.add(roi)
+                    all_roinames.append(roi)
             subj_data.append((subj_id, roi_dict))
 
     # Second pass: build aligned table, NaN for missing ROIs.
@@ -258,7 +310,7 @@ def run_group_analyze(
             if command_history is not None:
                 command_history.append((result.command, f"Concatenate {space} stack"))
         else:
-            tsv2glmfit(flist, str(params.stack), subjects)
+            tsv2glmfit(flist, str(params.stack), subjects, paired=context.paired)
 
         # 5. Run GLM
         glmdir = workdir / f"glm.{space}"

@@ -317,6 +317,7 @@ usage_exit:
   echo "    outdir is the path to the output, eg, derivativeds/petsurfer"
   echo "    analysis_level is either particpant or group"
   echo " --petsurfer-dir /path/to/petsurfer : by default uses bidsdir/derivatives/petsurfer"
+  echo " --paired ses1 ses2 : paired longitudinal group analysis, diff between two sessions"
   echo " --sif petsurfer.sif : singularity image file (or set PETSURFER_SIF env var)"
   echo " --singularity : use singularity instead of $container"
   echo " --docker : use docker instead of $container"
