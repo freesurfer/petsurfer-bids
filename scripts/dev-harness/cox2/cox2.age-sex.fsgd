@@ -1,0 +1,25 @@
+GroupDescriptorFile 1
+Title MyTitle
+Class M
+Class F
+Contrast age 0 0 0.5 0.5
+Contrast sex 1 -1 0 0
+Contrast sex-x-age 0 0 -1 0
+Variables age
+Input sub-11 M 32
+Input sub-12 M 22
+Input sub-13 F 23
+Input sub-14 F 32
+Input sub-15 F 34
+Input sub-16 F 39
+Input sub-17 F 38
+Input sub-18 M 43
+Input sub-19 M 36
+Input sub-20 F 35
+Input sub-21 F 30
+Input sub-22 F 28
+Input sub-23 F 22
+Input sub-24 M 26
+Input sub-25 M 42
+Input sub-26 M 33
+Input sub-27 F 40

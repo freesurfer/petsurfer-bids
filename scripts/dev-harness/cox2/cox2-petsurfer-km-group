@@ -1,0 +1,307 @@
+#!/bin/tcsh -f
+
+if(-e $FREESURFER/sources.csh) then
+  source $FREESURFER/sources.csh
+endif
+
+if($?COX2DIR == 0) then
+  setenv COX2DIR /autofs/space/iddhi_005/users/greve/cox2-ds004869-1.4.0
+endif
+set topdir = $COX2DIR
+
+set VERSION = '$Id$';
+set scriptname = `basename $0`
+
+set subject = ()
+set threads = 1
+
+set tmpdir = ();
+set cleanup = 1;
+set LF = ();
+set ForceUpdate = 0
+set work = (--nocleanup --log-level debug --no-container)
+set kmlist = ()
+set designlist = ()
+set submit = 0
+set fsgd = cox2.age-sex.fsgd
+
+set inputargs = ($argv);
+set PrintHelp = 0;
+if($#argv == 0) goto usage_exit;
+set n = `echo $argv | grep -e -help | wc -l` 
+if($n != 0) then
+  set PrintHelp = 1;
+  goto usage_exit;
+endif
+set n = `echo $argv | grep -e -version | wc -l` 
+if($n != 0) then
+  echo $VERSION
+  exit 0;
+endif
+goto parse_args;
+parse_args_return:
+goto check_params;
+check_params_return:
+
+set StartTime = `date`;
+set tSecStart = `date '+%s'`;
+set year  = `date +%Y`
+set month = `date +%m`
+set day   = `date +%d`
+set hour   = `date +%H`
+set min    = `date +%M`
+
+# Set up log file
+if($#LF == 0) then
+  set LF = /dev/null
+endif
+if($LF != /dev/null) rm -f $LF
+echo "Log file for cox2-petsurfer-km-group" >> $LF
+date  | tee -a $LF
+echo "" | tee -a $LF
+echo "setenv SUBJECTS_DIR $SUBJECTS_DIR" | tee -a $LF
+echo "cd `pwd`"  | tee -a $LF
+echo $0 $inputargs | tee -a $LF
+ls -l $0  | tee -a $LF
+echo "" | tee -a $LF
+cat $FREESURFER_HOME/build-stamp.txt | tee -a $LF
+echo $VERSION | tee -a $LF
+uname -a  | tee -a $LF
+echo "pid $$" | tee -a $LF
+if($?SLURM_JOB_ID) then
+  echo SLURM_JOB_ID $SLURM_JOB_ID >> $LF
+endif
+
+#========================================================
+cd $topdir
+pwd | tee -a $LF
+
+set pssubdir = petsurfer-tut
+set lfdir = `pwd`/log/$pssubdir
+mkdir -p $lfdir
+
+foreach design ($designlist)
+  foreach km ($kmlist)
+    echo "$km $design `date` ==============================================="
+    set LF = $lfdir/group.$design.$km.log
+    rm -f $LF
+    set cmd = (petsurfer-km bids group/$km.$design group --petsurfer-dir bids/derivatives/$pssubdir \
+      --vol-fwhm 6 --surf-fwhm 10 $work --work-dir work/group.$km.$design )
+    set cmd = ($cmd  --km-method $km)
+    if($design == osgm)    set cmd = ($cmd --participant-label 01 02 03 04 05 06 08 09 10 --session-label baseline )
+    if($design == paired)  set cmd = ($cmd --participant-label 11 12 13 14 15 16 18 19 20 --paired test retest )
+    if($design == age-sex) set cmd = ($cmd --fsgd $fsgd --session-label test )
+    if($design == age-sex || $design == paired) set cmd = ($cmd --cmc 1 20 abs 2 .99)
+    if($submit) then
+      fssubmit --c "fs_time $cmd | tee -a $LF" --j $km.$design
+    else
+      fs_time $cmd |& tee -a $LF
+    endif
+    echo "\n\n" |& tee -a $LF
+  end
+end
+
+#========================================================
+
+# Cleanup
+# if($cleanup) rm -rf $tmpdir
+
+# Done
+echo " " |& tee -a $LF
+set tSecEnd = `date '+%s'`;
+@ tSecRun = $tSecEnd - $tSecStart;
+set tRunMin = `echo $tSecRun/60|bc -l`
+set tRunMin = `printf %5.2f $tRunMin`
+set tRunHours = `echo $tSecRun/3600|bc -l`
+set tRunHours = `printf %5.2f $tRunHours`
+echo "Started at $StartTime " |& tee -a $LF
+echo "Ended   at `date`" |& tee -a $LF
+echo "Cox2-Petsurfer-Km-Group-Group-Run-Time-Sec $tSecRun" |& tee -a $LF
+echo "Cox2-Petsurfer-Km-Group-Group-Run-Time-Min $tRunMin" |& tee -a $LF
+echo "Cox2-Petsurfer-Km-Group-Group-Run-Time-Hours $tRunHours" |& tee -a $LF
+echo " " |& tee -a $LF
+echo "cox2-petsurfer-km-group-group Done" |& tee -a $LF
+exit 0
+
+###############################################
+
+############--------------##################
+error_exit:
+echo "ERROR:"
+
+exit 1;
+###############################################
+
+############--------------##################
+parse_args:
+set cmdline = ($argv);
+while( $#argv != 0 )
+
+  set flag = $argv[1]; shift;
+  
+  switch($flag)
+
+    case "--o":
+      if($#argv < 1) goto arg1err;
+      set outdir = $argv[1]; shift;
+      breaksw
+
+    case "--threads":
+      if($#argv < 1) goto arg1err;
+      set threads = $argv[1]; shift;
+      breaksw
+
+    case "--patlak":
+      set kmlist = ($kmlist patlak);
+      breaksw
+    case "--logan":
+      set kmlist = ($kmlist logan);
+      breaksw
+    case "--ma1":
+      set kmlist = ($kmlist ma1);
+      breaksw
+    case "--mrtm1":
+      set kmlist = ($kmlist mrtm1);
+      breaksw
+    case "--mrtm2":
+      set kmlist = ($kmlist mrtm2);
+      breaksw
+    case "--suvr":
+      set kmlist = ($kmlist suvr);
+      breaksw
+    case "--km-all":
+      set kmlist = (patlak logan ma1 mrtm1 mrtm2 suvr);
+      breaksw
+
+    case "--design-all":
+      set designlist = (osgm age-sex paired)
+      breaksw
+    case "--osgm":
+      set designlist = ($designlist osgm)
+      breaksw
+    case "--age-sex":
+      set designlist = ($designlist age-sex)
+      breaksw
+    case "--paired":
+      set designlist = ($designlist paired)
+      breaksw
+
+    case "--all":
+      set designlist = (osgm age-sex paired)
+      set kmlist = (patlak logan ma1 mrtm1 mrtm2 suvr);
+      breaksw
+
+    case "--submit":
+      set submit = 1
+      which fssubmit >& /dev/null
+      if($status) then
+        echo "ERROR: cannot find fssubmit, needed for --s all"
+        exit 1
+      endif
+      breaksw
+     
+    case "--force":
+     set ForceUpdate = 1
+     breaksw
+    case "--no-force":
+     set ForceUpdate = 0
+     breaksw
+
+    case "--log":
+      if($#argv < 1) goto arg1err;
+      set LF = $argv[1]; shift;
+      breaksw
+
+    case "--nolog":
+    case "--no-log":
+      set LF = /dev/null
+      breaksw
+
+    case "--tmp":
+    case "--tmpdir":
+      if($#argv < 1) goto arg1err;
+      set tmpdir = $argv[1]; shift;
+      set cleanup = 0;
+      breaksw
+
+    case "--nocleanup":
+      set cleanup = 0;
+      breaksw
+
+    case "--cleanup":
+      set cleanup = 1;
+      breaksw
+
+    case "--debug":
+      set verbose = 1;
+      set echo = 1;
+      breaksw
+
+    default:
+      echo ERROR: Flag $flag unrecognized. 
+      echo $cmdline
+      exit 1
+      breaksw
+  endsw
+
+end
+
+goto parse_args_return;
+############--------------##################
+
+############--------------##################
+check_params:
+
+if($#kmlist == 0) then
+  echo "ERROR: must spec a km"
+  exit 1;
+endif
+if($#designlist == 0) then
+  echo "ERROR: must spec a design"
+  exit 1;
+endif
+
+if(! -e $topdir/$fsgd) then
+  echo "ERROR: cannot find $topdir/$fsgd"
+  exit 1
+endif
+
+goto check_params_return;
+############--------------##################
+
+############--------------##################
+arg1err:
+  echo "ERROR: flag $flag requires one argument"
+  exit 1
+############--------------##################
+arg2err:
+  echo "ERROR: flag $flag requires two arguments"
+  exit 1
+############--------------##################
+
+############--------------##################
+usage_exit:
+  echo ""
+  echo "cox2-petsurfer-km-group"
+  echo   Note: looks in '$'COX2DIR for data
+  echo " --patlak, --logan, --ma1, --mrtm1, --mrtm2, --suvr : add any or all"
+  echo " --km-all : run all km models"
+  echo " --osgm, --age-sex, --paired"
+  echo " --design-all"
+  echo " --all : all km and all designs"
+  echo " --submit : submit to slurm (needs fssubmit)"
+  echo " --debug"
+  echo ""
+
+  if(! $PrintHelp) exit 1;
+  echo $VERSION
+  cat $0 | awk 'BEGIN{prt=0}{if(prt) print $0; if($1 == "BEGINHELP") prt = 1 }'
+exit 1;
+
+#---- Everything below here is printed out as part of help -----#
+BEGINHELP
+
+See cox2-petsurfer-km --help for documentation
+
+
+

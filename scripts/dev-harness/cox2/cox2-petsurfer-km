@@ -1,0 +1,422 @@
+#!/bin/tcsh -f
+
+if(-e $FREESURFER/sources.csh) then
+  source $FREESURFER/sources.csh
+endif
+
+if($?COX2DIR == 0) then
+  setenv COX2DIR /autofs/space/iddhi_005/users/greve/cox2-ds004869-1.4.0
+endif
+set topdir = $COX2DIR
+
+set VERSION = '$Id$';
+set scriptname = `basename $0`
+
+set subject = ()
+set threads = 1
+
+set tmpdir = ();
+set cleanup = 1;
+set LF = ();
+set ForceUpdate = 0
+set DoPatlak = 0;
+set DoLogan = 0;
+set DoMA1 = 0;
+set DoMRTM1 = 0;
+set DoMRTM2 = 0;
+set DoSUVR = 0;
+set work = (--nocleanup -w work --log-level debug --no-container)
+
+set inputargs = ($argv);
+set PrintHelp = 0;
+if($#argv == 0) goto usage_exit;
+set n = `echo $argv | grep -e -help | wc -l` 
+if($n != 0) then
+  set PrintHelp = 1;
+  goto usage_exit;
+endif
+set n = `echo $argv | grep -e -version | wc -l` 
+if($n != 0) then
+  echo $VERSION
+  exit 0;
+endif
+goto parse_args;
+parse_args_return:
+goto check_params;
+check_params_return:
+
+set StartTime = `date`;
+set tSecStart = `date '+%s'`;
+set year  = `date +%Y`
+set month = `date +%m`
+set day   = `date +%d`
+set hour   = `date +%H`
+set min    = `date +%M`
+
+# Set up log file
+if($#LF == 0) then
+  set LF = /dev/null
+endif
+if($LF != /dev/null) rm -f $LF
+echo "Log file for cox2-petsurfer-km" >> $LF
+date  | tee -a $LF
+echo "" | tee -a $LF
+echo "setenv SUBJECTS_DIR $SUBJECTS_DIR" | tee -a $LF
+echo "cd `pwd`"  | tee -a $LF
+echo $0 $inputargs | tee -a $LF
+ls -l $0  | tee -a $LF
+echo "" | tee -a $LF
+cat $FREESURFER_HOME/build-stamp.txt | tee -a $LF
+echo $VERSION | tee -a $LF
+uname -a  | tee -a $LF
+echo "pid $$" | tee -a $LF
+if($?SLURM_JOB_ID) then
+  echo SLURM_JOB_ID $SLURM_JOB_ID >> $LF
+endif
+
+#========================================================
+cd $topdir
+pwd | tee -a $LF
+
+set pssubdir = petsurfer-tut
+set lfdir = `pwd`/log/$pssubdir
+mkdir -p $lfdir
+
+if($DoLogan) then
+  # Reproduce Fig. 7A (VT, and by extension Vs/BPND) using Logan
+  # Note: only the 10 baseline-blocked subjects are in Figure 7
+  set LF = $lfdir/sub-$subjectno.logan.log
+  rm -f $LF
+  date | tee -a $LF
+  set cmd = (petsurfer-km bids bids/derivatives/$pssubdir participant \
+    --participant-label $subjectno --vol-fwhm 6 --surf-fwhm 10 \
+    --km-method logan --tstar 3600 $work)
+  echo ""| tee -a $LF
+  echo $cmd | tee -a $LF
+  fs_time $cmd | tee -a $LF
+  if($status) goto error_exit
+  echo ""
+endif  
+
+if($DoMA1) then
+  set LF = $lfdir/sub-$subjectno.ma1.log
+  rm -f $LF
+  date | tee -a $LF
+  set cmd = (petsurfer-km bids bids/derivatives/$pssubdir participant \
+    --participant-label $subjectno --vol-fwhm 6 --surf-fwhm 10 \
+    --km-method ma1 --tstar 3600 $work)
+  echo ""| tee -a $LF
+  echo $cmd | tee -a $LF
+  fs_time $cmd | tee -a $LF
+  if($status) goto error_exit
+  echo ""
+endif  
+
+if($DoPatlak) then
+  set LF = $lfdir/sub-$subjectno.patlak.log
+  rm -f $LF
+  date | tee -a $LF
+  set cmd = (petsurfer-km bids bids/derivatives/$pssubdir participant \
+    --participant-label $subjectno --vol-fwhm 6 --surf-fwhm 10 \
+    --km-method patlak --tstar 3600 $work)
+  echo ""| tee -a $LF
+  echo $cmd | tee -a $LF
+  fs_time $cmd | tee -a $LF
+  if($status) goto error_exit
+  echo ""
+endif  
+
+if($DoMRTM1) then
+  set LF = $lfdir/sub-$subjectno.mrtm1.log
+  rm -f $LF
+  date | tee -a $LF
+  # Complementary reference-tissue demo (not a literal Fig. 7B reproduction)
+  set cmd = (petsurfer-km bids bids/derivatives/$pssubdir participant \
+    --participant-label $subjectno --vol-fwhm 6 --surf-fwhm 10 \
+    --km-method mrtm1 --ref-roi Left-Cerebellum-Cortex,Right-Cerebellum-Cortex $work)
+  echo ""| tee -a $LF
+  echo $cmd | tee -a $LF
+  fs_time $cmd | tee -a $LF
+  if($status) goto error_exit
+  echo ""| tee -a $LF
+endif
+
+if($DoMRTM2) then
+  set LF = $lfdir/sub-$subjectno.mrtm2.log
+  rm -f $LF
+  date | tee -a $LF
+  set cmd = (petsurfer-km bids bids/derivatives/$pssubdir participant \
+    --participant-label $subjectno \
+    --vol-fwhm 6 --surf-fwhm 10 \
+    --km-method mrtm2 $work)
+  echo ""| tee -a $LF
+  echo $cmd | tee -a $LF
+  fs_time $cmd | tee -a $LF
+  if($status) goto error_exit
+  echo ""| tee -a $LF
+endif
+
+if($DoSUVR) then
+  set LF = $lfdir/sub-$subjectno.suvr.log
+  rm -f $LF
+  date | tee -a $LF
+  set cmd = (petsurfer-km bids bids/derivatives/$pssubdir participant \
+    --participant-label $subjectno \
+    --vol-fwhm 6 --surf-fwhm 10 \
+    --km-method suvr --suvr-frame 0 $work)
+  echo ""| tee -a $LF
+  echo $cmd | tee -a $LF
+  fs_time $cmd | tee -a $LF
+  if($status) goto error_exit
+  echo ""| tee -a $LF
+endif
+
+#========================================================
+
+# Cleanup
+# if($cleanup) rm -rf $tmpdir
+
+# Done
+echo " " |& tee -a $LF
+set tSecEnd = `date '+%s'`;
+@ tSecRun = $tSecEnd - $tSecStart;
+set tRunMin = `echo $tSecRun/60|bc -l`
+set tRunMin = `printf %5.2f $tRunMin`
+set tRunHours = `echo $tSecRun/3600|bc -l`
+set tRunHours = `printf %5.2f $tRunHours`
+echo "Started at $StartTime " |& tee -a $LF
+echo "Ended   at `date`" |& tee -a $LF
+echo "Cox2-Petsurfer-Km-Run-Time-Sec $tSecRun" |& tee -a $LF
+echo "Cox2-Petsurfer-Km-Run-Time-Min $tRunMin" |& tee -a $LF
+echo "Cox2-Petsurfer-Km-Run-Time-Hours $tRunHours" |& tee -a $LF
+echo " " |& tee -a $LF
+echo "cox2-petsurfer-km Done" |& tee -a $LF
+exit 0
+
+###############################################
+
+############--------------##################
+error_exit:
+echo "ERROR:"
+
+exit 1;
+###############################################
+
+############--------------##################
+parse_args:
+set cmdline = ($argv);
+while( $#argv != 0 )
+
+  set flag = $argv[1]; shift;
+  
+  switch($flag)
+
+    case "--o":
+      if($#argv < 1) goto arg1err;
+      set outdir = $argv[1]; shift;
+      breaksw
+
+    case "--s":
+      if($#argv < 1) goto arg1err;
+      set subject = $argv[1]; shift;
+      if($subject == all) then
+        which fssubmit >& /dev/null
+	if($status) then
+	  echo "ERROR: cannot find fssubmit, needed for --s all"
+	  exit 1
+	endif
+        # This requires fssubmit be installed in your path
+        cd $topdir/bids
+        set slist = (`ls -d sub-?? | cut -c5-6`)
+	foreach s ($slist)
+	  # Can $0 be used here instead of $topdir/scripts/cox2-petsurfer-km?
+          set cmd = ($topdir/scripts/cox2-petsurfer-km --s $s --all)
+	  fssubmit --c "$cmd" --j $s
+	end
+	exit 0
+      endif
+      breaksw
+
+    case "--threads":
+      if($#argv < 1) goto arg1err;
+      set threads = $argv[1]; shift;
+      breaksw
+
+    case "--logan":
+      set DoLogan = 1
+      breaksw
+    case "--mrtm1":
+      set DoMRTM1 = 1
+      breaksw
+    case "--mrtm2":
+      set DoMRTM2 = 1
+      breaksw
+    case "--patlak":
+      set DoPatlak = 1
+      breaksw
+    case "--ma1":
+      set DoMA1 = 1
+      breaksw
+    case "--suvr":
+      set DoSUVR = 1
+      breaksw
+    case "--all":
+      set DoPatlak = 1
+      set DoLogan = 1
+      set DoMA1 = 1
+      set DoMRTM1 = 1
+      set DoMRTM2 = 1
+      set DoSUVR = 1
+      breaksw
+
+    case "--force":
+     set ForceUpdate = 1
+     breaksw
+    case "--no-force":
+     set ForceUpdate = 0
+     breaksw
+
+    case "--log":
+      if($#argv < 1) goto arg1err;
+      set LF = $argv[1]; shift;
+      breaksw
+
+    case "--nolog":
+    case "--no-log":
+      set LF = /dev/null
+      breaksw
+
+    case "--tmp":
+    case "--tmpdir":
+      if($#argv < 1) goto arg1err;
+      set tmpdir = $argv[1]; shift;
+      set cleanup = 0;
+      breaksw
+
+    case "--nocleanup":
+      set cleanup = 0;
+      breaksw
+
+    case "--cleanup":
+      set cleanup = 1;
+      breaksw
+
+    case "--debug":
+      set verbose = 1;
+      set echo = 1;
+      breaksw
+
+    default:
+      echo ERROR: Flag $flag unrecognized. 
+      echo $cmdline
+      exit 1
+      breaksw
+  endsw
+
+end
+
+goto parse_args_return;
+############--------------##################
+
+############--------------##################
+check_params:
+
+if($#subject == 0) then
+  echo "ERROR: must spec subject"
+  exit 1;
+endif
+
+if(-e $topdir/bids/sub-$subject) then
+  set subjectno = $subject
+else if(-e $topdir/bids/$subject) then
+  set subjectno = `echo $subject | cut -c5-6`
+else
+  echo "ERROR: cannot find $subject in $topdir/bids"
+endif
+
+goto check_params_return;
+############--------------##################
+
+############--------------##################
+arg1err:
+  echo "ERROR: flag $flag requires one argument"
+  exit 1
+############--------------##################
+arg2err:
+  echo "ERROR: flag $flag requires two arguments"
+  exit 1
+############--------------##################
+
+############--------------##################
+usage_exit:
+  echo ""
+  echo "cox2-petsurfer-km" 
+  echo Note: looks in '$'COX2DIR for data
+  echo " --s subject : if subject=all, then all subjects are run with --all and slurmed"
+  echo " --patlak, --logan, --ma1, --mrtm1, --mrtm2, suvr : add any or all"
+  echo " --all : run all km models"
+  echo " --debug"
+  echo ""
+
+  if(! $PrintHelp) exit 1;
+  echo $VERSION
+  cat $0 | awk 'BEGIN{prt=0}{if(prt) print $0; if($1 == "BEGINHELP") prt = 1 }'
+exit 1;
+
+#---- Everything below here is printed out as part of help -----#
+BEGINHELP
+
+This script will analyze the Cox2 data (individual) from from
+https://openneuro.org/datasets/ds004869/versions/1.4.0 using petsurfer-bids
+(see also cox2-petsurfer-km-group for group analysis). PETprep and PetFit have
+already been run on this data so it is ready for PETsurfer. Group analysis
+can be run with the companion cox2-petsurfer-km-group script.
+
+These two scripts serve several purposes:
+1. Stress test of petsurfer-bids by performing a wide range of analyses
+2. Provides examples on how to run petsurfer-bids
+
+To set up to run this, first create a space for the data, eg,
+mkdir -p /place/for/cox2
+
+Download it, eg, 
+aws s3 sync --no-sign-request s3://openneuro.org/ds004869 /place/for/cox2/bids
+Note that the data is going into the bids folder under /place/for/cox2
+
+Note: there is an error in the 1.4 and previous versions in that the retest
+session of subject sub-27 has the tracer name misspelt in the json file. To
+fix, edit bids/sub-27/ses-retest/pet/sub-27_ses-retest_pet.json to change
+"Mc1" to "MC1".  Make sure that there is not a backup of the json file in
+the bids folder as bids will find it and generate an error. This can happen
+with emacs in that it creates a .~sub-27_ses-retest_pet.json backup file.
+You will not be able to see this file but bids can.
+
+Create an environment variable
+export COX2DIR=/place/for/cox2
+
+Then run the individual
+cox2-petsurfer-km --s sub-01
+
+This will put the data into bids/derivatives/petsurfer-tut. All kinetic
+models will be run, including patlak, logan, ma1, mrtm1, mrtm2, and
+suvr. Note that patlak is not appropriate for this data, but we run it
+anyway to assure that it actually runs. This will run the indvidual analysis
+in the MNI152 volume, fsaverage space (lh and rh hemispheres), and in ROIs.
+The parameters are set so that the Logan method should replicate Figure 7B
+pretty closely from Yan 2025. 
+
+Run the command above for all subjects.
+
+To run the group analysis, run
+cox2-petsurfer-km-group --all
+
+This will run group analysis with three designs (osgm, sex-age, and paired);
+the outputs will be in group/kmmethod.design. There will also be
+work/group.kmmethod.design folder with useful outputs that do not get
+transferred into bids output.
+
+The scripts are set up to save the work folder. This allows easier debugging
+and is necessary for some aspects of group analysis (as mentioned above.
+
+
+
