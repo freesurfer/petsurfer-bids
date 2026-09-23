@@ -265,3 +265,12 @@ def test_run_bidsify_missing_volume_and_roi_sources_write_no_sidecar(tmp_path: P
     assert caplog.text.count("Expected output not found") == 2
     assert sorted(p.name for p in pet.iterdir()) == []
     assert mappings == []
+
+
+def test_run_bidsify_dataset_description_bids_version(tmp_path: Path) -> None:
+    args, temps, workdir, inputs = _surface_fixture(tmp_path, nifti_surfaces=True)
+    temps.clear()
+    run_bidsify("01", "baseline", inputs, temps, workdir, [], args, [])
+    desc = json.loads((args.output_dir / "dataset_description.json").read_text())
+    assert desc["BIDSVersion"] == "1.11.1"
+    assert desc["DatasetType"] == "derivative"

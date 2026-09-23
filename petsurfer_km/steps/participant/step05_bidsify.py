@@ -161,7 +161,7 @@ def _ensure_dataset_description(output_dir: Path, petprep_dir: Path) -> None:
 
     desc: dict = {
         "Name": "petsurfer-km",
-        "BIDSVersion": "1.9.0",
+        "BIDSVersion": "1.11.1",
         "DatasetType": "derivative",
         "GeneratedBy": [{
             "Name": "petsurfer-km",

@@ -323,6 +323,8 @@ def test_dataset_description_copies_source_datasets(tmp_path: Path) -> None:
     _ensure_dataset_description(tmp_path / "out", petsurfer_dir)
     desc = json.loads((tmp_path / "out" / "dataset_description.json").read_text())
     assert desc["SourceDatasets"] == src_desc["SourceDatasets"]
+    assert desc["BIDSVersion"] == "1.11.1"
+    assert desc["DatasetType"] == "derivative"
 
 
 def test_dataset_description_idempotent(tmp_path: Path) -> None:
