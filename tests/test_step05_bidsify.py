@@ -246,5 +246,22 @@ def test_run_bidsify_missing_surface_source_skips(tmp_path: Path, monkeypatch, c
     pet = args.output_dir / "sub-01" / "ses-baseline" / "pet"
     assert len(list(pet.glob("*hemi-L*.func.gii"))) == 1
     assert len(list(pet.glob("*hemi-R*.func.gii"))) == 0
-    assert len(list(pet.glob("*hemi-R*.json"))) == 1  # sidecar is still written (existing behaviour)
+    assert len(list(pet.glob("*hemi-R*.json"))) == 0  # no orphan sidecar
     assert len(mappings) == 1 and "hemi-L" in mappings[0][1]
+
+
+def test_run_bidsify_missing_volume_and_roi_sources_write_no_sidecar(tmp_path: Path, caplog) -> None:
+    """Missing vt.nii.gz (MNI) and vt.dat (ROI) -> warnings, no map, no orphan .json."""
+    args, temps, workdir, inputs = _surface_fixture(tmp_path, nifti_surfaces=True)
+    temps.clear()
+    for key, sub in (("ma1_mni_dir", "ma1.mni.sm06"), ("ma1_roi_dir", "ma1.roi")):
+        d = workdir / sub
+        d.mkdir(parents=True)
+        temps[key] = d  # directories exist, files do not
+    mappings: list[tuple[str, str]] = []
+    with caplog.at_level(logging.WARNING, logger="petsurfer_km"):
+        run_bidsify("01", "baseline", inputs, temps, workdir, [], args, mappings)
+    pet = args.output_dir / "sub-01" / "ses-baseline" / "pet"
+    assert caplog.text.count("Expected output not found") == 2
+    assert sorted(p.name for p in pet.iterdir()) == []
+    assert mappings == []

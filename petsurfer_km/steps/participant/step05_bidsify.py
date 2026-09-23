@@ -70,15 +70,16 @@ def run_bidsify(
             src_nifti = temps[vol_key] / map_file
             dst_nifti = output_pet_dir / f"{name}.nii.gz"
             _copy_nifti(src_nifti, dst_nifti)
-            if file_mappings is not None and dst_nifti.exists():
-                _record_mapping(file_mappings, src_nifti, dst_nifti, workdir, subject_outdir)
-            _write_json(output_pet_dir / f"{name}.json", {
-                **sidecar,
-                "Description": (
-                    f"{meas} parametric map in MNI152 space "
-                    f"(smoothed {fwhm}mm FWHM)"
-                ),
-            })
+            if dst_nifti.exists():  # no orphan sidecar when the map is missing
+                if file_mappings is not None:
+                    _record_mapping(file_mappings, src_nifti, dst_nifti, workdir, subject_outdir)
+                _write_json(output_pet_dir / f"{name}.json", {
+                    **sidecar,
+                    "Description": (
+                        f"{meas} parametric map in MNI152 space "
+                        f"(smoothed {fwhm}mm FWHM)"
+                    ),
+                })
 
         # Surface parametric maps (fsaverage, per hemisphere)
         for hemi in args.hemispheres:
@@ -97,7 +98,9 @@ def run_bidsify(
                 else:
                     dst_surf = output_pet_dir / f"{name}{FUNC_GII_EXT}"
                     nifti_to_func_gii(src_nifti, dst_surf, hemi, command_history)
-                if file_mappings is not None and dst_surf.exists():
+                if not dst_surf.exists():  # no orphan sidecar when the map is missing
+                    continue
+                if file_mappings is not None:
                     _record_mapping(file_mappings, src_nifti, dst_surf, workdir, subject_outdir)
                 _write_json(output_pet_dir / f"{name}.json", {
                     **sidecar,
@@ -115,12 +118,13 @@ def run_bidsify(
             src_dat = temps[roi_key] / roi_file
             dst_tsv = output_pet_dir / f"{name}.tsv"
             _convert_dat_to_tsv(src_dat, dst_tsv, method)
-            if file_mappings is not None and dst_tsv.exists():
-                _record_mapping(file_mappings, src_dat, dst_tsv, workdir, subject_outdir)
-            _write_json(output_pet_dir / f"{name}.json", {
-                **sidecar,
-                "Description": f"ROI-level {meas} kinetic parameters from {model}",
-            })
+            if dst_tsv.exists():  # no orphan sidecar when the table is missing
+                if file_mappings is not None:
+                    _record_mapping(file_mappings, src_dat, dst_tsv, workdir, subject_outdir)
+                _write_json(output_pet_dir / f"{name}.json", {
+                    **sidecar,
+                    "Description": f"ROI-level {meas} kinetic parameters from {model}",
+                })
 
     logger.info(f"BIDS outputs written to {output_pet_dir}")
 
