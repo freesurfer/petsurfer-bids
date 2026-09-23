@@ -330,6 +330,7 @@ usage_exit:
   echo "     group analysis only), runs mri_glmfit-sim; CFT=cluster-forming threshold,"
   echo "     NPERM=number of permutations, SIGN=abs|pos|neg, NSPACES=1|2, FWER=cluster-wise"
   echo "     p-value threshold (eg, --cmc 2 1000 abs 2 0.05)"
+  echo " --nifti-surfaces : write surface maps as 1D NIfTI (.nii.gz) instead of GIFTI (.func.gii)"
   echo " --sif petsurfer.sif : singularity image file (or set PETSURFER_SIF env var)"
   echo " --singularity : use singularity instead of $container"
   echo " --docker : use docker instead of $container"

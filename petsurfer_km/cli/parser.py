@@ -279,6 +279,14 @@ Examples:
         action="store_true",
         help="Process right hemisphere only (surface analysis).",
     )
+    space_group.add_argument(
+        "--nifti-surfaces",
+        action="store_true",
+        help=(
+            "Write surface parametric maps as FreeSurfer 1D NIfTI (.nii.gz) "
+            "instead of GIFTI (.func.gii). Applies to participant and group outputs."
+        ),
+    )
 
     # Smoothing arguments
     smooth_group = parser.add_argument_group("Smoothing")
