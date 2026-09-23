@@ -7,7 +7,12 @@ import csv
 
 import pytest
 
-from petsurfer_km.steps.group.step02_analyze import tsv2glmfit
+from petsurfer_km.steps.group.step02_analyze import (
+    SURFACE_EXTENSIONS,
+    _pick_input_file,
+    _space_params,
+    tsv2glmfit,
+)
 
 
 def _write_tsv(path, rows):
@@ -289,3 +294,34 @@ class TestPairedDiff:
         tsv2glmfit([str(p1), str(p2), str(p3)], out, ["A"], paired=True)
         import os
         assert not os.path.exists(out)
+
+
+# ---------------------------------------------------------------------------
+# Surface input format auto-detection (GIFTI preferred, NIfTI fallback)
+# ---------------------------------------------------------------------------
+
+class TestSurfaceInputFormat:
+    def _ctx(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(meas="VT")
+
+    def test_surface_spaces_accept_gifti_and_nifti(self, tmp_path):
+        for space, hemi in (("fsaverage-lh", "L"), ("fsaverage-rh", "R")):
+            p = _space_params(space, self._ctx(), tmp_path)
+            assert p.extension == SURFACE_EXTENSIONS == [".func.gii", ".nii.gz"]
+            assert p.hemi == hemi and p.bids_space == "fsaverage"
+            assert p.stack.name == f"{space}.nii.gz"  # work-dir stack stays NIfTI
+
+    def test_volume_and_roi_unchanged(self, tmp_path):
+        assert _space_params("mni", self._ctx(), tmp_path).extension == ".nii.gz"
+        assert _space_params("ROI", self._ctx(), tmp_path).extension == ".tsv"
+
+    def test_pick_prefers_gifti_when_both_present(self):
+        both = ["/x/sub-01_hemi-L_mimap.nii.gz", "/x/sub-01_hemi-L_mimap.func.gii"]
+        assert _pick_input_file(both, SURFACE_EXTENSIONS).endswith(".func.gii")
+
+    def test_pick_falls_back_to_nifti(self):
+        assert _pick_input_file(["/x/sub-02_hemi-L_mimap.nii.gz"], SURFACE_EXTENSIONS).endswith(".nii.gz")
+
+    def test_pick_single_extension_returns_first(self):
+        assert _pick_input_file(["/x/a.nii.gz", "/x/b.nii.gz"], ".nii.gz") == "/x/a.nii.gz"

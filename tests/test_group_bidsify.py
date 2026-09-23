@@ -59,13 +59,32 @@ def _make_ctx(
     )
 
 
-def _make_args(tmp_path: Path, *, petsurfer_dir: Path | None = None) -> SimpleNamespace:
+def _make_args(
+    tmp_path: Path, *, petsurfer_dir: Path | None = None, nifti_surfaces: bool = False
+) -> SimpleNamespace:
     return SimpleNamespace(
         output_dir=tmp_path / "out",
         surf_fwhm=5.0,
         vol_fwhm=6.0,
         petsurfer_dir=petsurfer_dir or (tmp_path / "petsurfer"),
+        nifti_surfaces=nifti_surfaces,
     )
+
+
+def _fake_gifti_convert(monkeypatch) -> list[tuple[Path, Path, str]]:
+    """Replace ``nifti_to_func_gii`` in step03 with a stub that writes a marker file."""
+    import petsurfer_km.steps.group.step03_bidsify as step03
+    calls: list[tuple[Path, Path, str]] = []
+
+    def fake(src: Path, dest: Path, hemi: str, command_history=None) -> bool:
+        calls.append((src, dest, hemi))
+        dest.write_bytes(b"fake-gifti:" + src.read_bytes())
+        if command_history is not None:
+            command_history.append((f"mri_convert {src} {dest}", f"Convert {hemi}"))
+        return True
+
+    monkeypatch.setattr(step03, "nifti_to_func_gii", fake)
+    return calls
 
 
 def _write_fake_gamma(path: Path, content: bytes = b"fake-gamma") -> None:
@@ -320,6 +339,7 @@ def test_dataset_description_idempotent(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_run_group_bidsify_osgm_end_to_end(tmp_path: Path) -> None:
+    """--nifti-surfaces path: every map is a byte copy of its gamma.nii.gz."""
     workdir = tmp_path / "work"
     # Surface + volume gamma maps
     gamma_lh = b"fake-lh-gamma"
@@ -347,7 +367,7 @@ def test_run_group_bidsify_osgm_end_to_end(tmp_path: Path) -> None:
     )
 
     ctx = _make_ctx(fsgd=None)
-    args = _make_args(tmp_path, petsurfer_dir=petsurfer_dir)
+    args = _make_args(tmp_path, petsurfer_dir=petsurfer_dir, nifti_surfaces=True)
     run_group_bidsify(ctx, args, workdir)
 
     out = args.output_dir
@@ -438,7 +458,7 @@ def test_run_group_bidsify_fsgd_end_to_end(tmp_path: Path) -> None:
     (petsurfer_dir / "dataset_description.json").write_text(json.dumps({"Name": "petsurfer-km"}))
 
     ctx = _make_ctx(fsgd=fsgd, fsgd_file=fsgd_file)
-    args = _make_args(tmp_path, petsurfer_dir=petsurfer_dir)
+    args = _make_args(tmp_path, petsurfer_dir=petsurfer_dir, nifti_surfaces=True)
     run_group_bidsify(ctx, args, workdir)
 
     out = args.output_dir
@@ -502,3 +522,63 @@ def test_run_group_bidsify_fsgd_end_to_end(tmp_path: Path) -> None:
         (out / f"atlas-{ATLAS_LABEL}_desc-sexxage_model-MA1_kinpar.json").read_text()
     )
     assert sexxage_json["ContrastName"] == "sex-x-age"
+
+
+# ---------------------------------------------------------------------------
+# GIFTI surface output (default)
+# ---------------------------------------------------------------------------
+
+def test_run_group_bidsify_gifti_surfaces_by_default(tmp_path: Path, monkeypatch) -> None:
+    workdir = tmp_path / "work"
+    _write_fake_gamma(workdir / "glm.fsaverage-lh" / "osgm" / "gamma.nii.gz", b"lh")
+    _write_fake_gamma(workdir / "glm.fsaverage-rh" / "osgm" / "gamma.nii.gz", b"rh")
+    _write_fake_gamma(workdir / "glm.mni" / "osgm" / "gamma.nii.gz", b"mni")
+    (workdir / "glm.mni" / "dof.dat").write_text("3")
+    calls = _fake_gifti_convert(monkeypatch)
+    ctx = _make_ctx(spaces=["fsaverage-lh", "fsaverage-rh", "mni"])
+    args = _make_args(tmp_path)
+    mappings: list[tuple[str, str]] = []
+    history: list[tuple[str, str]] = []
+
+    run_group_bidsify(ctx, args, workdir, mappings, history)
+
+    out = args.output_dir
+    surf_dir = out / "tpl-fsaverage" / "pet"
+    for hemi, hemi_int, payload in (("L", "lh", b"lh"), ("R", "rh", b"rh")):
+        stem = f"tpl-fsaverage_hemi-{hemi}_atlas-{ATLAS_LABEL}_desc-osgm_model-MA1_meas-VT_mimap"
+        gii = surf_dir / f"{stem}.func.gii"
+        assert gii.exists() and gii.read_bytes() == b"fake-gifti:" + payload
+        assert not (surf_dir / f"{stem}.nii.gz").exists()
+        sc = json.loads((surf_dir / f"{stem}.json").read_text())
+        assert sc["ContrastName"] == "osgm" and sc["SmoothingFWHM"] == 5
+        assert sc["Density"].startswith("163842 vertices")
+        assert sc["SpatialReference"].endswith(f"tpl-fsaverage_hemi-{hemi}_den-164k_white.surf.gii")
+        assert (f"glm.fsaverage-{hemi_int}/osgm/gamma.nii.gz", f"tpl-fsaverage/pet/{stem}.func.gii") in mappings
+    # volume untouched: NIfTI byte copy, no surface keys
+    vol_stem = f"tpl-MNI152NLin2009cAsym_atlas-{ATLAS_LABEL}_desc-osgm_model-MA1_meas-VT_mimap"
+    vol = out / "tpl-MNI152NLin2009cAsym" / "pet" / f"{vol_stem}.nii.gz"
+    assert vol.read_bytes() == b"mni"
+    vol_sc = json.loads(vol.with_name(f"{vol_stem}.json").read_text())
+    assert "Density" not in vol_sc and "SpatialReference" not in vol_sc
+    assert [c[2] for c in calls] == ["lh", "rh"]
+    assert len(history) == 2
+    assert len(mappings) == 3
+
+
+def test_run_group_bidsify_nifti_surfaces_flag_skips_conversion(tmp_path: Path, monkeypatch) -> None:
+    workdir = tmp_path / "work"
+    _write_fake_gamma(workdir / "glm.fsaverage-lh" / "osgm" / "gamma.nii.gz", b"lh")
+    (workdir / "glm.fsaverage-lh" / "dof.dat").write_text("3")
+    calls = _fake_gifti_convert(monkeypatch)
+    ctx = _make_ctx(spaces=["fsaverage-lh"])
+    args = _make_args(tmp_path, nifti_surfaces=True)
+
+    run_group_bidsify(ctx, args, workdir)
+
+    stem = f"tpl-fsaverage_hemi-L_atlas-{ATLAS_LABEL}_desc-osgm_model-MA1_meas-VT_mimap"
+    surf_dir = args.output_dir / "tpl-fsaverage" / "pet"
+    assert (surf_dir / f"{stem}.nii.gz").read_bytes() == b"lh"
+    assert not (surf_dir / f"{stem}.func.gii").exists()
+    sc = json.loads((surf_dir / f"{stem}.json").read_text())
+    assert "Density" in sc and "SpatialReference" in sc  # describe the data, not the container
+    assert calls == []

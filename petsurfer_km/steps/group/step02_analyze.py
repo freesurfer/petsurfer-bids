@@ -21,9 +21,15 @@ class _SpaceParams(NamedTuple):
     bids_space: str | None
     hemi: str | None
     suffix: str
-    extension: str
+    extension: str | list[str]
     meas: str | None
     stack: Path
+
+
+# Participant surface maps may be GIFTI (default since the GIFTI change) or
+# FreeSurfer 1D NIfTI (``--nifti-surfaces`` runs, or older outputs).  Both are
+# accepted; GIFTI is preferred when a subject has both.
+SURFACE_EXTENSIONS = [".func.gii", ".nii.gz"]
 
 
 def _space_params(space: str, context: GroupContext, workdir: Path) -> _SpaceParams:
@@ -31,13 +37,13 @@ def _space_params(space: str, context: GroupContext, workdir: Path) -> _SpacePar
     if space == "fsaverage-lh":
         return _SpaceParams(
             bids_space="fsaverage", hemi="L", suffix="mimap",
-            extension=".nii.gz", meas=context.meas,
+            extension=SURFACE_EXTENSIONS, meas=context.meas,
             stack=workdir / "fsaverage-lh.nii.gz",
         )
     if space == "fsaverage-rh":
         return _SpaceParams(
             bids_space="fsaverage", hemi="R", suffix="mimap",
-            extension=".nii.gz", meas=context.meas,
+            extension=SURFACE_EXTENSIONS, meas=context.meas,
             stack=workdir / "fsaverage-rh.nii.gz",
         )
     if space == "mni":
@@ -52,6 +58,24 @@ def _space_params(space: str, context: GroupContext, workdir: Path) -> _SpacePar
         extension=".tsv", meas=None,
         stack=workdir / "roi.csv",
     )
+
+
+def _pick_input_file(files: list[str], extensions: str | list[str]) -> str:
+    """Choose one per-subject input from a pybids match list.
+
+    When several extensions are accepted, the first extension in *extensions*
+    wins (GIFTI before NIfTI for surface spaces).  Falls back to the first
+    match otherwise.
+    """
+    if isinstance(extensions, str):
+        extensions = [extensions]
+    for ext in extensions:
+        for f in files:
+            if f.endswith(ext):
+                if len(files) > 1:
+                    logger.debug(f"Several candidate files, using {ext}: {f}")
+                return f
+    return files[0]
 
 
 def _is_numeric(value: str) -> bool:
@@ -293,7 +317,7 @@ def run_group_analyze(
                     raise RuntimeError(
                         f"Cannot find file for {sub} {ses} in space {space}"
                     )
-                flist.append(flist0[0])
+                flist.append(_pick_input_file(flist0, params.extension))
         logger.debug(f"Gathered {len(flist)} files for {space}")
 
         # 4. Concatenate

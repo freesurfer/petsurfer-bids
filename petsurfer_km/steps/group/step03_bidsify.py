@@ -4,8 +4,10 @@ Copies GLM contrast estimate results (gamma maps + ROI gamma table) from the wor
 directory to the output directory with BIDS-compliant naming per the BIDS Atlas
 specification (BEP 38):
 
-  - Contrast estimate parametric maps (volume/surface): ``_mimap.nii.gz`` + ``_mimap.json``
-    under ``tpl-<space>/pet/`` with ``atlas-PetsurferKM`` and ``desc-<contrast>``.
+  - Contrast estimate parametric maps under ``tpl-<space>/pet/`` with
+    ``atlas-PetsurferKM`` and ``desc-<contrast>``: volumes as ``_mimap.nii.gz``,
+    surfaces as ``_mimap.func.gii`` (GIFTI via ``mri_convert``; ``--nifti-surfaces``
+    keeps the FreeSurfer 1D NIfTI), each with a ``_mimap.json`` sidecar.
   - Per-ROI contrast estimate kinetic parameters (tabular): ``_kinpar.tsv`` + ``_kinpar.json``
     at the output root with ``atlas-PetsurferKM`` and ``desc-<contrast>``.
   - ``atlas-PetsurferKM_description.json`` (required by BEP 38 when both
@@ -23,6 +25,7 @@ from pathlib import Path
 
 import petsurfer_km
 from petsurfer_km import __version__
+from petsurfer_km.gifti import FUNC_GII_EXT, nifti_to_func_gii, surface_sidecar_fields
 from petsurfer_km.methods import HEMI_BIDS, ROI_TSV_HEADERS
 from petsurfer_km.steps.group.step01_setup import GroupContext
 
@@ -42,6 +45,7 @@ def run_group_bidsify(
     args: Namespace,
     workdir: Path,
     file_mappings: list[tuple[str, str]] | None = None,
+    command_history: list[tuple[str, str]] | None = None,
 ) -> None:
     """Copy GLM contrast estimate results into ``args.output_dir`` with BIDS-compliant names."""
     logger.info(f"Writing BIDS group outputs to {args.output_dir}")
@@ -53,7 +57,9 @@ def run_group_bidsify(
         if space == "ROI":
             _bidsify_roi(workdir, args.output_dir, context, file_mappings)
         else:
-            _bidsify_map(workdir, args.output_dir, args, space, context, file_mappings)
+            _bidsify_map(
+                workdir, args.output_dir, args, space, context, file_mappings, command_history
+            )
 
     logger.info(f"BIDS group outputs written to {args.output_dir}")
 
@@ -127,8 +133,13 @@ def _bidsify_map(
     space: str,
     context: GroupContext,
     file_mappings: list[tuple[str, str]] | None = None,
+    command_history: list[tuple[str, str]] | None = None,
 ) -> None:
-    """Emit one contrast estimate mimap per contrast for a voxel/surface space."""
+    """Emit one contrast estimate mimap per contrast for a voxel/surface space.
+
+    Surface maps are written as GIFTI (``.func.gii``) unless ``args.nifti_surfaces``
+    is set; volumes are always NIfTI.
+    """
     glmdir = workdir / f"glm.{space}"
     contrasts = _discover_contrasts_map(glmdir)
     if not contrasts:
@@ -156,16 +167,23 @@ def _bidsify_map(
             "mimap",
         ]
         name = "_".join(parts)
-        _copy_nifti(src, outdir / f"{name}.nii.gz")
+        sidecar = _build_mimap_sidecar(context, space, fwhm, contrast)
+        if hemi and not getattr(args, "nifti_surfaces", False):
+            dest = outdir / f"{name}{FUNC_GII_EXT}"
+            nifti_to_func_gii(src, dest, space.replace("fsaverage-", ""), command_history)
+        else:
+            dest = outdir / f"{name}.nii.gz"
+            _copy_nifti(src, dest)
+        if hemi:
+            sidecar = {**sidecar, **surface_sidecar_fields(hemi)}
+        if not dest.exists():
+            continue
         if file_mappings is not None:
             file_mappings.append((
                 str(src.relative_to(workdir)),
-                str((outdir / f"{name}.nii.gz").relative_to(output_dir)),
+                str(dest.relative_to(output_dir)),
             ))
-        _write_json(
-            outdir / f"{name}.json",
-            _build_mimap_sidecar(context, space, fwhm, contrast),
-        )
+        _write_json(outdir / f"{name}.json", sidecar)
 
 
 # ---------------------------------------------------------------------------
