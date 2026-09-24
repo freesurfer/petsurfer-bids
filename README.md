@@ -148,7 +148,8 @@ For each kinetic model specified, the following analyses will be performed:
 The volumetic analysis can be disabled by specifying `--no-vol`.  The surface
 based analysis can be disabled by specifying `--no-surf`.  The flags `--lh` and
 `--rh` can be used to run only the left or right hemisphere of the surface
-based analysis.
+based analysis.  Surface maps are written as GIFTI (`.func.gii`); specify
+`--nifti-surfaces` to write them as FreeSurfer 1D NIfTI (`.nii.gz`) instead.
 
 All kinetic models rely on the outputs of [PETPrep](https://github.com/nipreps/petprep).
 Volumetric analyses are performed in `MNI152NLin2009cAsym` space and
@@ -239,11 +240,13 @@ alternate temporary folder, use the `--work-dir` flag.
 For each subject/session/kinetic-model combination, the following outputs will
 be generated and placed in the `<output_dir>/sub-<subid>/ses-<sessid>/pet/`
 directory:
-- `*_mimap.[json|nii.gz]`: A molecular imaging map of VT (`meas-VT`; for Logan and Logan-MA1 models),
+- `*_mimap.[json|nii.gz|func.gii]`: A molecular imaging map of VT (`meas-VT`; for Logan and Logan-MA1 models),
 BPND (`meas-BPND`; for MRTM1 or MRTM2 models), Ki (`meas-Ki`; for the Patlak model), or
 SUVR (`meas-SUVR`; for the SUVR model) in:
-  - `MNI152NLin2009cAsym` space
-  - `fsaverage` space, left (`hemi-L`) and right (`hemi-R`) hemispheres
+  - `MNI152NLin2009cAsym` space, as NIfTI (`.nii.gz`)
+  - `fsaverage` space, left (`hemi-L`) and right (`hemi-R`) hemispheres, as GIFTI
+    (`.func.gii`; one `float32` data array per file, converted from FreeSurfer's
+    1D NIfTI with `mri_convert`).  Specify `--nifti-surfaces` to get `.nii.gz`.
 - `*_kinpar.[json|tsv]`: model parameters averaged across the ROIs defined by PETprep
 
 An html report is also generated for each subject/session pair and placed in the 
@@ -372,8 +375,10 @@ in the above example)
 And the following files are written for each contrast defined (i.e. `OSGM` in the
 first example or each contrast defined in the fsgd file):
 
-- `tpl-fsaverage/pet/*_mimap.[json|nii.gz]`: contrast estimate maps on the
-  fsaverage surface, left (`hemi-L`) and right (`hemi-R`) hemispheres.
+- `tpl-fsaverage/pet/*_mimap.[json|func.gii]`: contrast estimate maps on the
+  fsaverage surface, left (`hemi-L`) and right (`hemi-R`) hemispheres, as GIFTI
+  (`.nii.gz` with `--nifti-surfaces`).  Participant-level surface maps in either
+  format are accepted as input.
 - `tpl-MNI152NLin2009cAsym/pet/*_mimap.[json|nii.gz]`: contrast estimate maps
   in MNI152 volumetric space.
 - `atlas-PetsurferKM_desc-*_model-*_kinpar.[json|tsv]`: per-ROI contrast estimate

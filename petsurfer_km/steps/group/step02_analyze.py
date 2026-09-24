@@ -21,9 +21,15 @@ class _SpaceParams(NamedTuple):
     bids_space: str | None
     hemi: str | None
     suffix: str
-    extension: str
+    extension: str | list[str]
     meas: str | None
     stack: Path
+
+
+# Participant surface maps may be GIFTI (default since the GIFTI change) or
+# FreeSurfer 1D NIfTI (``--nifti-surfaces`` runs, or older outputs).  Both are
+# accepted; GIFTI is preferred when a subject has both.
+SURFACE_EXTENSIONS = [".func.gii", ".nii.gz"]
 
 
 def _space_params(space: str, context: GroupContext, workdir: Path) -> _SpaceParams:
@@ -31,13 +37,13 @@ def _space_params(space: str, context: GroupContext, workdir: Path) -> _SpacePar
     if space == "fsaverage-lh":
         return _SpaceParams(
             bids_space="fsaverage", hemi="L", suffix="mimap",
-            extension=".nii.gz", meas=context.meas,
+            extension=SURFACE_EXTENSIONS, meas=context.meas,
             stack=workdir / "fsaverage-lh.nii.gz",
         )
     if space == "fsaverage-rh":
         return _SpaceParams(
             bids_space="fsaverage", hemi="R", suffix="mimap",
-            extension=".nii.gz", meas=context.meas,
+            extension=SURFACE_EXTENSIONS, meas=context.meas,
             stack=workdir / "fsaverage-rh.nii.gz",
         )
     if space == "mni":
@@ -54,6 +60,24 @@ def _space_params(space: str, context: GroupContext, workdir: Path) -> _SpacePar
     )
 
 
+def _pick_input_file(files: list[str], extensions: str | list[str]) -> str:
+    """Choose one per-subject input from a pybids match list.
+
+    When several extensions are accepted, the first extension in *extensions*
+    wins (GIFTI before NIfTI for surface spaces).  Falls back to the first
+    match otherwise.
+    """
+    if isinstance(extensions, str):
+        extensions = [extensions]
+    for ext in extensions:
+        for f in files:
+            if f.endswith(ext):
+                if len(files) > 1:
+                    logger.debug(f"Several candidate files, using {ext}: {f}")
+                return f
+    return files[0]
+
+
 def _is_numeric(value: str) -> bool:
     """Return True if *value* parses as a float (accepts 'NaN'/'nan' too)."""
     try:
@@ -66,6 +90,9 @@ def _is_numeric(value: str) -> bool:
 # Row labels that are known FreeSurfer table artifacts, not ROIs, and
 # must never be treated as predictor/measure columns (issue #28).
 _NON_ROI_LABELS = {"roi", "frame_start", "frame_end", "frame"}
+
+# How many subject ids to name in the "dropping ROI" warning before truncating.
+_MAX_LISTED_SUBJECTS = 10
 
 
 def _read_roi_dict(tsvfile: str) -> dict[str, str]:
@@ -113,7 +140,9 @@ def tsv2glmfit(
     Subjects may have different ROI sets. Values are aligned by ROI name (not
     by row position) and missing ROIs are filled with NaN so every row has the
     same number of columns. ROIs not present in all subjects (any column
-    containing NaN) are then pruned before the table is emitted.
+    containing NaN) are then pruned before the table is emitted, and a warning
+    naming the ROI and the subjects lacking it is logged for each one
+    (issue #25; ``WM-hypointensities`` is the usual case).
 
     Non-ROI rows such as ``frame_start``/``frame_end``/``Frame`` (FreeSurfer
     table labels that should never be treated as ROI predictors/measures, see
@@ -186,11 +215,21 @@ def tsv2glmfit(
         roitable.append(roivals)
 
     # Prune ROIs (columns) not present in all subjects: keep only the
-    # intersection of ROI sets. Drop any ROI column containing a NaN.
-    keep = [
-        i for i in range(len(all_roinames))
-        if all(row[i + 1] != "NaN" for row in roitable)
-    ]
+    # intersection of ROI sets. Drop any ROI column containing a NaN, and
+    # warn so the user knows the ROI is absent from the group result (issue #25).
+    keep: list[int] = []
+    for i, roi in enumerate(all_roinames):
+        missing_in = [row[0] for row in roitable if row[i + 1] == "NaN"]
+        if not missing_in:
+            keep.append(i)
+            continue
+        shown = ", ".join(missing_in[:_MAX_LISTED_SUBJECTS])
+        if len(missing_in) > _MAX_LISTED_SUBJECTS:
+            shown += ", ..."
+        logger.warning(
+            f"tsv2glmfit: dropping ROI '{roi}' from group ROI table: "
+            f"missing in {len(missing_in)} of {len(roitable)} subjects ({shown})"
+        )
 
     # Guard: exclude any remaining column whose values are not all numeric
     # (e.g. a stray non-ROI label that slipped through, or a genuinely
@@ -293,7 +332,7 @@ def run_group_analyze(
                     raise RuntimeError(
                         f"Cannot find file for {sub} {ses} in space {space}"
                     )
-                flist.append(flist0[0])
+                flist.append(_pick_input_file(flist0, params.extension))
         logger.debug(f"Gathered {len(flist)} files for {space}")
 
         # 4. Concatenate

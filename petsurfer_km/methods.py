@@ -54,7 +54,9 @@ ROI_TSV_HEADERS: dict[str, tuple[str, ...]] = {
     "patlak":    ("ROI", "Ki"),
 }
 
-# FreeSurfer output filenames per method: (volumetric/surface .nii.gz, ROI .dat)
+# FreeSurfer output filenames per method in the work directory:
+# (volumetric/surface map .nii.gz, ROI .dat).  Surface maps are 1D NIfTI here
+# and are converted to GIFTI (.func.gii) at the BIDSify step unless --nifti-surfaces.
 MAP_FILES: dict[str, tuple[str | None, str | None]] = {
     "suvr": ("suvr.nii.gz", "suvr.dat"),
     "mrtm1": ("bp.nii.gz", "gamma.table.dat"),
