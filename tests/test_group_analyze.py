@@ -207,6 +207,81 @@ class TestNonROILabelsExcluded:
         )
         assert rows[0] == ["Subject", "r1"]
 
+    def test_extra_roi_pruned_warns(self, tmp_path, caplog):
+        """Dropping an ROI missing from some subjects logs one warning naming them (issue #25)."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="petsurfer_km")
+        rows = _run(
+            [
+                "r1\t1.0\nr2\t2.0\n",
+                "r1\t10.0\nr2\t20.0\nr3\t30.0\n",
+                "r1\t100.0\nr2\t200.0\n",
+            ],
+            tmp_path,
+            participant_ids=["A", "B", "C"],
+        )
+        assert rows[0] == ["Subject", "r1", "r2"]
+        drops = [rec.message for rec in caplog.records if "dropping ROI" in rec.message]
+        assert len(drops) == 1
+        assert "'r3'" in drops[0]
+        assert "missing in 2 of 3 subjects (A, C)" in drops[0]
+        assert "'r1'" not in drops[0] and "'r2'" not in drops[0]
+
+    def test_no_warning_when_rois_consistent(self, tmp_path, caplog):
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="petsurfer_km")
+        _run(
+            ["r1\t1.0\nr2\t2.0\n", "r1\t10.0\nr2\t20.0\n"],
+            tmp_path,
+            participant_ids=["A", "B"],
+        )
+        assert not [rec for rec in caplog.records if "dropping ROI" in rec.message]
+
+    def test_dropped_roi_subject_list_truncated(self, tmp_path, caplog):
+        """More than 10 subjects lacking the ROI: list 10 ids then '...'."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="petsurfer_km")
+        ids = [f"S{k:02d}" for k in range(12)]
+        files = ["r1\t1.0\n"] * 12
+        files[0] = "r1\t1.0\nrare\t5.0\n"  # only S00 has 'rare'
+        rows = _run(files, tmp_path, participant_ids=ids)
+        assert rows[0] == ["Subject", "r1"]
+        drops = [rec.message for rec in caplog.records if "dropping ROI 'rare'" in rec.message]
+        assert len(drops) == 1
+        assert "missing in 11 of 12 subjects (" in drops[0]
+        assert drops[0].endswith(", ...)")
+        listed = drops[0].split("(")[-1].rstrip(")").replace(", ...", "").split(", ")
+        assert listed == ids[1:11]
+
+    def test_paired_missing_session_roi_warns(self, tmp_path, caplog):
+        """Paired mode: an ROI absent from one session of one subject is dropped with a warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="petsurfer_km")
+        sub1_ses1 = tmp_path / "sub1_ses1.tsv"
+        sub1_ses2 = tmp_path / "sub1_ses2.tsv"
+        sub2_ses1 = tmp_path / "sub2_ses1.tsv"
+        sub2_ses2 = tmp_path / "sub2_ses2.tsv"
+        _write_tsv(sub1_ses1, [("r1", "1.0"), ("r2", "2.0")])
+        _write_tsv(sub1_ses2, [("r1", "0.5"), ("r2", "1.0")])
+        _write_tsv(sub2_ses1, [("r1", "3.0"), ("r2", "4.0")])
+        _write_tsv(sub2_ses2, [("r1", "2.0")])  # r2 missing in sub2's second session
+        out = str(tmp_path / "merged.csv")
+        tsv2glmfit(
+            [str(sub1_ses1), str(sub1_ses2), str(sub2_ses1), str(sub2_ses2)],
+            out,
+            participant_ids=["sub1", "sub2"],
+            paired=True,
+        )
+        rows = _read_table(out)
+        assert rows[0] == ["Subject", "r1"]
+        drops = [rec.message for rec in caplog.records if "dropping ROI 'r2'" in rec.message]
+        assert len(drops) == 1
+        assert "missing in 1 of 2 subjects (sub2)" in drops[0]
+
     def test_stray_non_numeric_roi_column_dropped_with_warning(self, tmp_path, caplog):
         """A genuinely non-numeric ROI value (not one of the known
         FreeSurfer labels) should also be dropped, with a non-fatal warning,

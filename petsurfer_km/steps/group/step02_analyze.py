@@ -91,6 +91,9 @@ def _is_numeric(value: str) -> bool:
 # must never be treated as predictor/measure columns (issue #28).
 _NON_ROI_LABELS = {"roi", "frame_start", "frame_end", "frame"}
 
+# How many subject ids to name in the "dropping ROI" warning before truncating.
+_MAX_LISTED_SUBJECTS = 10
+
 
 def _read_roi_dict(tsvfile: str) -> dict[str, str]:
     """Read one per-subject ROI TSV/CSV file into ``{roi_name: value}``.
@@ -137,7 +140,9 @@ def tsv2glmfit(
     Subjects may have different ROI sets. Values are aligned by ROI name (not
     by row position) and missing ROIs are filled with NaN so every row has the
     same number of columns. ROIs not present in all subjects (any column
-    containing NaN) are then pruned before the table is emitted.
+    containing NaN) are then pruned before the table is emitted, and a warning
+    naming the ROI and the subjects lacking it is logged for each one
+    (issue #25; ``WM-hypointensities`` is the usual case).
 
     Non-ROI rows such as ``frame_start``/``frame_end``/``Frame`` (FreeSurfer
     table labels that should never be treated as ROI predictors/measures, see
@@ -210,11 +215,21 @@ def tsv2glmfit(
         roitable.append(roivals)
 
     # Prune ROIs (columns) not present in all subjects: keep only the
-    # intersection of ROI sets. Drop any ROI column containing a NaN.
-    keep = [
-        i for i in range(len(all_roinames))
-        if all(row[i + 1] != "NaN" for row in roitable)
-    ]
+    # intersection of ROI sets. Drop any ROI column containing a NaN, and
+    # warn so the user knows the ROI is absent from the group result (issue #25).
+    keep: list[int] = []
+    for i, roi in enumerate(all_roinames):
+        missing_in = [row[0] for row in roitable if row[i + 1] == "NaN"]
+        if not missing_in:
+            keep.append(i)
+            continue
+        shown = ", ".join(missing_in[:_MAX_LISTED_SUBJECTS])
+        if len(missing_in) > _MAX_LISTED_SUBJECTS:
+            shown += ", ..."
+        logger.warning(
+            f"tsv2glmfit: dropping ROI '{roi}' from group ROI table: "
+            f"missing in {len(missing_in)} of {len(roitable)} subjects ({shown})"
+        )
 
     # Guard: exclude any remaining column whose values are not all numeric
     # (e.g. a stray non-ROI label that slipped through, or a genuinely
