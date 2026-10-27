@@ -34,6 +34,10 @@ logger = logging.getLogger("petsurfer_km")
 
 _FREEBROWSE_DIR = Path(__file__).resolve().parent / "freebrowse"
 
+# Vendored FreeBrowse single-file build; its bundled niivue reads documents up
+# to version ``nvd-create.py:NVD_VERSION``.
+FREEBROWSE_HTML = "freebrowse-2.5.1.html"
+
 # Module-level caches (populated on first use)
 _freebrowse_html_cache: str | None = None
 _nvd_create_mod = None
@@ -62,7 +66,7 @@ def _get_freebrowse_html() -> str:
     """Return the freebrowse HTML content, reading from disk on first call."""
     global _freebrowse_html_cache
     if _freebrowse_html_cache is None:
-        html_path = _FREEBROWSE_DIR / "freebrowse-2.2.1.html"
+        html_path = _FREEBROWSE_DIR / FREEBROWSE_HTML
         _freebrowse_html_cache = html_path.read_text(encoding="utf-8")
     return _freebrowse_html_cache
 
@@ -91,9 +95,9 @@ def generate_freebrowse_viewer(
         nvd_template = json.load(f)
 
     # Set overlay name and colour limits from the robust vlim
-    nvd_template["imageOptionsArray"][1]["name"] = bids_mimap.name
-    nvd_template["imageOptionsArray"][1]["cal_min"] = vlim[0]
-    nvd_template["imageOptionsArray"][1]["cal_max"] = vlim[1]
+    nvd_template["volumes"][1]["name"] = bids_mimap.name
+    nvd_template["volumes"][1]["calMin"] = vlim[0]
+    nvd_template["volumes"][1]["calMax"] = vlim[1]
 
     # Write adjusted template to workdir
     adjusted_template = workdir / "freebrowse-template.nvd"
@@ -103,9 +107,9 @@ def generate_freebrowse_viewer(
     # Create NVD document with embedded image data
     nvd = nvd_create_mod.create_nvd(
         [str(template_path), str(bids_mimap)],
-        template_path=str(adjusted_template),
+        template=str(adjusted_template),
     )
-    nvd_json = json.dumps(nvd)
+    nvd_json = nvd_create_mod.to_json(nvd)
 
     # Embed into freebrowse HTML
     html_content = _get_freebrowse_html()

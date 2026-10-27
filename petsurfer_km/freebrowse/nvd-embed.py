@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Embed NVD data into a freebrowse HTML file for self-contained viewing.
 
+The document is placed in a ``<script type="application/json">`` element and
+handed to FreeBrowse (2.5.x) as bytes via ``window.__EMBEDDED_NVD_DATA__`` and
+the ``loadEmbeddedNvd`` event; FreeBrowse detects the encoding (JSON or CBOR)
+and loads it with niivue's ``loadDocument``.
+
 This script has no external dependencies (standard library only) and can be
 copied and distributed independently.
 
@@ -21,19 +26,28 @@ import sys
 from pathlib import Path
 
 
+def escape_json_for_html(nvd_json: str) -> str:
+    """Make JSON safe inside a ``<script>`` element.
+
+    In JSON ``<`` can only occur inside strings, where ``\\u003c`` is an
+    equivalent escape, so no ``</script>`` or ``<!--`` can end the element.
+    """
+    return nvd_json.replace("<", "\\u003c")
+
+
 def create_bootstrap_script(nvd_json: str) -> str:
     """Create the JavaScript bootstrap that loads embedded NVD data."""
     return f'''<script type="application/json" id="embedded-nvd-data">
-{nvd_json}
+{escape_json_for_html(nvd_json)}
 </script>
 <script>
 (function() {{
-  // Parse embedded NVD data
+  // Hand the embedded NVD to FreeBrowse as bytes (it detects the encoding)
   var dataElement = document.getElementById('embedded-nvd-data');
   if (!dataElement) return;
 
   try {{
-    var nvdData = JSON.parse(dataElement.textContent);
+    var nvdData = new TextEncoder().encode(dataElement.textContent);
     window.__EMBEDDED_NVD_DATA__ = nvdData;
 
     // Dispatch event after DOM is ready
@@ -50,7 +64,7 @@ def create_bootstrap_script(nvd_json: str) -> str:
       setTimeout(dispatchLoadEvent, 100);
     }}
   }} catch (e) {{
-    console.error('Failed to parse embedded NVD data:', e);
+    console.error('Failed to read embedded NVD data:', e);
   }}
 }})();
 </script>'''
