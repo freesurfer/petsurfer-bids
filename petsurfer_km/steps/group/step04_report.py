@@ -8,7 +8,8 @@ estimate results, including:
 - About / provenance section
 
 Visualisations are created with nilearn and saved in ``<output_dir>/figures/``.
-Freebrowse interactive viewers are generated for MNI volumetric maps.
+Freebrowse interactive viewers are generated for MNI volumetric maps and, per
+contrast, for both fsaverage hemispheres.
 """
 
 from __future__ import annotations
@@ -20,10 +21,12 @@ from html import escape
 from pathlib import Path
 
 from petsurfer_km import __version__
+from petsurfer_km.gifti import FUNC_GII_EXT
 from petsurfer_km.methods import HEMI_BIDS
 from petsurfer_km.report_helpers import (
     ensure_sourcedata,
     fetch_mni_template,
+    generate_freebrowse_surface_viewer,
     generate_freebrowse_viewer,
     generate_surface_figure,
     generate_volume_figure,
@@ -138,6 +141,7 @@ def _build_figure_sections(
     """Build per-contrast figure HTML sections across all non-ROI spaces."""
     contrast_html: dict[str, list[str]] = {}
     contrast_order: list[str] = []
+    contrast_hemis: dict[str, list[str]] = {}  # fsaverage hemispheres per contrast
 
     for space in context.spaces:
         if space == "ROI":
@@ -229,6 +233,16 @@ def _build_figure_sections(
                     f'<img src="./{escape(rel)}" class="img-fluid mb-3" '
                     f'alt="{escape(contrast)} {context.meas} {hemi_internal}">'
                 )
+                contrast_hemis.setdefault(contrast, []).append(hemi_internal)
+
+    # Freebrowse surface viewer per contrast (both hemispheres), linked under
+    # the last surface figure
+    for contrast, hemis in contrast_hemis.items():
+        surf_link = _build_surface_viewer_link(
+            contrast, hemis, context, args, output_dir, figures_dir
+        )
+        if surf_link:
+            contrast_html[contrast][-1] += f"\n<br>{surf_link}"
 
     # Assemble one <div> per contrast
     sections: list[str] = []
@@ -241,6 +255,48 @@ def _build_figure_sections(
             f'</div>'
         )
     return sections
+
+
+def _build_surface_viewer_link(
+    contrast: str,
+    hemis: list[str],
+    context: GroupContext,
+    args: Namespace,
+    output_dir: Path,
+    figures_dir: Path,
+) -> str:
+    """Generate the freebrowse surface viewer for *contrast*; return its link HTML.
+
+    The viewer shows the BIDS surface maps (GIFTI, or 1D NIfTI with
+    ``--nifti-surfaces``) of *hemis* (``lh``/``rh``).  Returns ``""`` when
+    freebrowse is disabled, no map exists, or generation fails.
+    """
+    if getattr(args, "no_freebrowse", False):
+        return ""
+    ext = ".nii.gz" if getattr(args, "nifti_surfaces", False) else FUNC_GII_EXT
+    sanitized = _sanitize_contrast(contrast)
+
+    hemi_maps: dict[str, Path] = {}
+    tpl = None
+    for hemi in hemis:
+        tpl, bids_hemi, _ = _space_output(f"fsaverage-{hemi}", args)
+        bids_name = _build_mimap_bids_name(tpl, bids_hemi, sanitized, context.model, context.meas)
+        bids_map = output_dir / f"tpl-{tpl}" / "pet" / f"{bids_name}{ext}"
+        if bids_map.exists():
+            hemi_maps[hemi] = bids_map
+        else:
+            logger.debug(f"BIDS surface map not found for freebrowse: {bids_map}")
+    if not hemi_maps:
+        return ""
+
+    fb_name = f"{_build_mimap_bids_name(tpl, None, sanitized, context.model, context.meas)}.html"
+    try:
+        generate_freebrowse_surface_viewer(hemi_maps, figures_dir / fb_name)
+    except Exception as exc:
+        logger.warning(f"Could not generate freebrowse surface viewer for {contrast}: {exc}")
+        return ""
+    fb_rel = f"figures/{fb_name}"
+    return f'<a href="./{escape(fb_rel)}" target="_blank">View surfaces in freebrowse</a>'
 
 
 # ---------------------------------------------------------------------------
