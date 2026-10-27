@@ -1,75 +1,28 @@
 {
-  "encodedImageBlobs": [],
-  "previewImageDataURL": "",
-  "imageOptionsMap": {},
-  "opts": {
-    "fontMinPx": 4.34,
-    "rulerWidth": 1,
-    "crosshairColor": [
-      1,
-      0,
-      0,
-      0.5
-    ],
-    "isNearestInterpolation": false,
-    "multiplanarShowRender": 0,
-    "dragAndDropEnabled": false,
-    "limitFrames4D": null,
-    "clickToSegmentIntensityMax": null,
-    "clickToSegmentIntensityMin": null,
-    "meshThicknessOn2D": "infinity"
+  "version": 9,
+  "layout": {
+    "showRender": 0
   },
-  "labels": [],
-  "completedMeasurements": [],
-  "completedAngles": [],
-  "imageOptionsArray": [
+  "ui": {
+    "crosshairColor": [1, 0, 0, 0.5]
+  },
+  "volumes": [
     {
       "name": "tpl-MNI152NLin2009cAsym_res-01_T1w.nii.gz",
-      "colormap": "gray",
+      "colormap": "Gray",
       "opacity": 1,
-      "pairedImgData": null,
-      "cal_min": 2000,
-      "cal_max": 8500,
-      "trustCalMinMax": true,
-      "percentileFrac": 0.02,
-      "ignoreZeroVoxels": false,
-      "useQFormNotSForm": false,
-      "colormapNegative": "",
-      "colormapLabel": null,
-      "imageType": 1,
-      "frame4D": 0,
-      "limitFrames4D": null,
-      "url": "",
-      "urlImageData": "",
-      "alphaThreshold": false,
-      "cal_minNeg": null,
-      "cal_maxNeg": null,
-      "colorbarVisible": true
+      "calMin": 2000,
+      "calMax": 8500,
+      "isColorbarVisible": true
     },
     {
       "name": "fill this out",
-      "colormap": "nih",
+      "colormap": "Nih",
       "opacity": 0.5,
-      "pairedImgData": null,
-      "cal_min": -2.24293212890625,
-      "cal_max": 3.05706787109375,
-      "trustCalMinMax": true,
-      "percentileFrac": 0.02,
-      "ignoreZeroVoxels": false,
-      "useQFormNotSForm": false,
-      "colormapNegative": "",
-      "colormapLabel": null,
-      "imageType": 1,
-      "frame4D": 0,
-      "limitFrames4D": null,
-      "url": "",
-      "urlImageData": "",
-      "alphaThreshold": false,
-      "cal_minNeg": null,
-      "cal_maxNeg": null,
-      "colorbarVisible": true
+      "calMin": -2.24293212890625,
+      "calMax": 3.05706787109375,
+      "isColorbarVisible": true
     }
   ],
-  "connectomes": [],
-  "meshesString": "[[1,[]]]"
+  "meshes": []
 }

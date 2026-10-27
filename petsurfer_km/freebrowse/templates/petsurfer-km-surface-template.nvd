@@ -1,0 +1,64 @@
+{
+  "version": 9,
+  "layout": {
+    "sliceType": 4
+  },
+  "meshes": [
+    {
+      "name": "lh.pial",
+      "color": [1, 1, 1, 1],
+      "shaderType": "phong",
+      "layers": [
+        {
+          "name": "lh.sulc",
+          "colormap": "Gray",
+          "calMin": -3,
+          "calMax": 3,
+          "isColormapInverted": true,
+          "colormapType": 0,
+          "isTransparentBelowCalMin": false,
+          "opacity": 1,
+          "isColorbarVisible": false
+        },
+        {
+          "name": "fill this out",
+          "colormap": "Nih",
+          "calMin": 0,
+          "calMax": 1,
+          "colormapType": 0,
+          "isTransparentBelowCalMin": true,
+          "opacity": 1,
+          "isColorbarVisible": true
+        }
+      ]
+    },
+    {
+      "name": "rh.pial",
+      "color": [1, 1, 1, 1],
+      "shaderType": "phong",
+      "layers": [
+        {
+          "name": "rh.sulc",
+          "colormap": "Gray",
+          "calMin": -3,
+          "calMax": 3,
+          "isColormapInverted": true,
+          "colormapType": 0,
+          "isTransparentBelowCalMin": false,
+          "opacity": 1,
+          "isColorbarVisible": false
+        },
+        {
+          "name": "fill this out",
+          "colormap": "Nih",
+          "calMin": 0,
+          "calMax": 1,
+          "colormapType": 0,
+          "isTransparentBelowCalMin": true,
+          "opacity": 1,
+          "isColorbarVisible": true
+        }
+      ]
+    }
+  ]
+}

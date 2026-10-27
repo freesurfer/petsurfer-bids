@@ -253,9 +253,15 @@ An html report is also generated for each subject/session pair and placed in the
 `<output_dir>/sub-<subid>/` folder.  Figures that this html report references are
 also placed in the `<output_dir>/sub-<subid>/ses-<sessid>/figures/` folder.
 
-By default, PETsurfer-BIDS will also generate browser-based visualizations for
-each volumetric analysis performed (visualizations for surface-based analyses 
-are coming soon!) using [FreeBrowse](https://freesurfer.github.io/freebrowse/). These are standalone HTML files that contain all of the code to render the visualization as well as the data it visualized.
+By default, PETsurfer-BIDS will also generate browser-based visualizations
+using [FreeBrowse](https://freesurfer.github.io/freebrowse/) (v2.5.1), one per
+kinetic model for each of:
+- the volumetric map, over the `MNI152NLin2009cAsym` template
+- the surface maps, both hemispheres on the `fsaverage` pial surface
+
+These are standalone HTML files (about 25 MB each) that contain all of the code
+to render the visualization as well as the data it visualizes.  They are placed
+in the `figures/` folder and linked from the html report.
 See the [single HTML file build](https://github.com/freesurfer/freebrowse?tab=readme-ov-file#single-html-file)
 of FreeBrowse for further information.  **No data, imaging or otherwise, leaves
 your device when viewing these visualizations**.  The generation of FreeBrowse-based
@@ -383,6 +389,9 @@ first example or each contrast defined in the fsgd file):
   in MNI152 volumetric space.
 - `atlas-PetsurferKM_desc-*_model-*_kinpar.[json|tsv]`: per-ROI contrast estimate
   kinetic parameters (one TSV per contrast).
+
+A `group.html` report is also written to `output_dir`, with its figures and
+FreeBrowse visualizations in `output_dir/figures/`.
 
 #### Longitudinal Analysis
 

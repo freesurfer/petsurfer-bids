@@ -327,7 +327,7 @@ Examples:
     proc_group.add_argument(
         "--no-freebrowse",
         action="store_true",
-        help="Do not generate interactive freebrowse viewers for volumetric maps.",
+        help="Do not generate interactive freebrowse viewers for volumetric and surface maps.",
     )
     proc_group.add_argument(
         "--abort-on-error",
