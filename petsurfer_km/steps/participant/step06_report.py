@@ -9,7 +9,8 @@ for one subject/session, including:
 - About / provenance section
 
 Visualisations are created with nilearn and saved as SVG in
-``<output_dir>/sub-XX/figures/``.
+``<output_dir>/sub-XX/figures/``, alongside self-contained FreeBrowse viewers
+(volumetric MNI152 map; both fsaverage hemispheres).
 """
 
 from __future__ import annotations
@@ -21,11 +22,13 @@ from html import escape
 from pathlib import Path
 
 from petsurfer_km import __version__
+from petsurfer_km.gifti import FUNC_GII_EXT
 from petsurfer_km.inputs import InputGroup
 from petsurfer_km.methods import KM_METHOD_ORDER, MODEL_LABELS, MEAS_LABELS, HEMI_BIDS, MAP_FILES
 from petsurfer_km.report_helpers import (
     ensure_sourcedata,
     fetch_mni_template,
+    generate_freebrowse_surface_viewer,
     generate_freebrowse_viewer,
     generate_surface_figure,
     generate_volume_figure,
@@ -184,6 +187,15 @@ def run_report(
                         f'alt="{model} {meas} {hemi}">'
                     )
 
+        # --- Freebrowse surface viewer (both hemispheres) ---
+        surf_link = _build_surface_viewer_link(
+            method, prefix, output_dir, subject, session, figures_dir, fig_rel_dir, temps, args
+        )
+        if surf_link and method_figures:
+            method_figures[-1] += f"\n<br>{surf_link}"
+        elif surf_link:
+            method_figures.append(surf_link)
+
         if method_figures:
             figures_html = "\n".join(method_figures)
             figure_sections.append(
@@ -247,6 +259,65 @@ def _make_figures_dir(output_dir: Path, subject: str, session: str | None) -> Pa
     figures_dir = figures_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     return figures_dir
+
+
+# ---------------------------------------------------------------------------
+# Freebrowse surface viewer
+# ---------------------------------------------------------------------------
+
+
+def _build_surface_viewer_link(
+    method: str,
+    prefix: str,
+    output_dir: Path,
+    subject: str,
+    session: str | None,
+    figures_dir: Path,
+    fig_rel_dir: str,
+    temps: dict[str, Path],
+    args: Namespace,
+) -> str:
+    """Generate the freebrowse surface viewer for *method*; return its link HTML.
+
+    The viewer shows the BIDS surface maps (GIFTI, or 1D NIfTI with
+    ``--nifti-surfaces``) of every hemisphere that was run.  Returns ``""``
+    when freebrowse is disabled, no map exists, or generation fails.
+    """
+    if getattr(args, "no_freebrowse", False):
+        return ""
+    model = MODEL_LABELS[method]
+    meas = MEAS_LABELS[method]
+    ext = ".nii.gz" if getattr(args, "nifti_surfaces", False) else FUNC_GII_EXT
+    fwhm = int(args.surf_fwhm)
+
+    pet_dir = output_dir / f"sub-{subject}"
+    if session:
+        pet_dir = pet_dir / f"ses-{session}"
+    pet_dir = pet_dir / "pet"
+
+    hemi_maps: dict[str, Path] = {}
+    for hemi in ("lh", "rh"):
+        if f"{method}_surf_{hemi}_dir" not in temps:
+            continue
+        bids_map = pet_dir / (
+            f"{prefix}_hemi-{HEMI_BIDS[hemi]}_space-fsaverage"
+            f"_desc-sm{fwhm}_model-{model}_meas-{meas}_mimap{ext}"
+        )
+        if bids_map.exists():
+            hemi_maps[hemi] = bids_map
+        else:
+            logger.debug(f"BIDS surface map not found for freebrowse: {bids_map}")
+    if not hemi_maps:
+        return ""
+
+    fb_name = f"{prefix}_model-{model}_meas-{meas}_space-fsaverage_mimap.html"
+    try:
+        generate_freebrowse_surface_viewer(hemi_maps, figures_dir / fb_name)
+    except Exception as exc:
+        logger.warning(f"Could not generate freebrowse surface viewer for {model} {meas}: {exc}")
+        return ""
+    fb_rel = f"{fig_rel_dir}/{fb_name}"
+    return f'<a href="./{escape(fb_rel)}" target="_blank">View surfaces in freebrowse</a>'
 
 
 # ---------------------------------------------------------------------------
