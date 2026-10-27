@@ -1,8 +1,9 @@
 """Tests for the FreeBrowse document writer (``freebrowse/nvd-create.py``),
-the HTML embedder (``freebrowse/nvd-embed.py``) and the report helper that
-combines them.
+the HTML embedder (``freebrowse/nvd-embed.py``) and the report helpers that
+combine them.
 
-The NIfTI-1 parser is checked against nibabel, which writes the fixtures.
+The NIfTI-1, GIFTI and FreeSurfer readers are checked against nibabel, which
+writes the fixtures.
 """
 
 from __future__ import annotations
@@ -10,18 +11,22 @@ from __future__ import annotations
 import base64
 import gzip
 import json
+import struct
 from pathlib import Path
 
 import nibabel as nib
 import numpy as np
 import pytest
+from nibabel.freesurfer import read_geometry, write_geometry, write_morph_data
 
 from petsurfer_km import report_helpers
 from petsurfer_km.report_helpers import (
     FREEBROWSE_HTML,
     _FREEBROWSE_DIR,
     _get_freebrowse_modules,
+    generate_freebrowse_surface_viewer,
     generate_freebrowse_viewer,
+    robust_vlim,
 )
 
 nvd_create, nvd_embed = _get_freebrowse_modules()
@@ -232,6 +237,7 @@ def test_vendored_freebrowse_has_embed_hooks() -> None:
     assert "loadEmbeddedNvd" in html
     assert "__EMBEDDED_NVD_DATA__" in html
     assert "window.freebrowse={nv:" in html
+    assert "async setMeshLayerProperty(" in html
 
 
 def test_generate_freebrowse_viewer(tmp_path: Path, monkeypatch) -> None:
@@ -250,3 +256,176 @@ def test_generate_freebrowse_viewer(tmp_path: Path, monkeypatch) -> None:
     assert (overlay["calMin"], overlay["calMax"]) == (0.5, 2.5)
     assert overlay["data"]["img"] == np.ones(8, "<f4").tobytes()
     assert gzip.decompress(template.read_bytes())[352:] == bg["data"]["img"]
+
+
+# --- surfaces -------------------------------------------------------------------
+
+# A tetrahedron: 4 vertices, 4 triangles.
+_COORDS = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]], np.float32)
+_FACES = np.array([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]], np.int32)
+
+
+def _write_fs_surface(path: Path) -> Path:
+    write_geometry(str(path), _COORDS, _FACES)
+    return path
+
+
+def _write_func_gii(path: Path, values: np.ndarray, encoding: str = "GZipBase64Binary") -> Path:
+    darray = nib.gifti.GiftiDataArray(values, intent="NIFTI_INTENT_NONE", encoding=encoding)
+    nib.save(nib.GiftiImage(darrays=[darray]), str(path))
+    return path
+
+
+def test_read_fs_surface_matches_nibabel(tmp_path: Path) -> None:
+    path = _write_fs_surface(tmp_path / "lh.pial")
+
+    positions, indices = nvd_create.read_fs_surface(path)
+
+    coords, faces = read_geometry(str(path))
+    assert positions == coords.astype("<f4").tobytes()
+    assert indices == faces.astype("<u4").tobytes()
+
+
+def test_read_fs_curv_matches_nibabel(tmp_path: Path) -> None:
+    values = np.array([-1.5, 0, 2.25, 7], np.float32)
+    write_morph_data(str(tmp_path / "lh.sulc"), values)
+
+    assert nvd_create.read_surface_values(tmp_path / "lh.sulc") == values.astype("<f4").tobytes()
+
+
+@pytest.mark.parametrize("encoding", ["ASCII", "Base64Binary", "GZipBase64Binary"])
+@pytest.mark.parametrize("dtype", [np.float32, np.int32])
+def test_read_gifti_values(tmp_path: Path, encoding: str, dtype) -> None:
+    values = np.array([-2, 0, 3, 7], dtype)
+    path = _write_func_gii(tmp_path / "x.func.gii", values, encoding)
+
+    assert nvd_create.read_surface_values(path) == values.astype("<f4").tobytes()
+
+
+def test_read_nifti_values_freesurfer_layouts(tmp_path: Path) -> None:
+    values = np.arange(12, dtype=np.float32) - 3
+    nii = _write_nifti(tmp_path / "a.nii.gz", values.reshape(12, 1, 1))
+    gii = _write_func_gii(tmp_path / "a.func.gii", values)
+    assert nvd_create.read_surface_values(nii) == nvd_create.read_surface_values(gii) == values.tobytes()
+
+    # FreeSurfer writes vox_offset 0 and the 27307 x 1 x 6 style layout.
+    raw = bytearray(gzip.decompress(nii.read_bytes()))
+    struct.pack_into("<f", raw, 108, 0.0)
+    struct.pack_into("<4h", raw, 40, 3, 2, 1, 6)
+    (tmp_path / "b.nii").write_bytes(raw)
+    assert nvd_create.read_surface_values(tmp_path / "b.nii") == values.tobytes()
+
+    # Scaled integers.
+    ints = _write_nifti(tmp_path / "c.nii", np.arange(12, dtype=np.int16).reshape(12, 1, 1))
+    raw = bytearray(ints.read_bytes())
+    struct.pack_into("<ff", raw, 112, 0.5, 1.0)
+    ints.write_bytes(raw)
+    expected = np.asarray(nib.load(ints).dataobj, np.float32).ravel()
+    assert np.frombuffer(nvd_create.read_surface_values(ints), "<f4").tolist() == expected.tolist()
+
+
+def test_gray_colors() -> None:
+    values = np.array([-10, -3, 0, 3, 10], "<f4").tobytes()
+
+    colors = np.frombuffer(nvd_create.gray_colors(values, -3, 3), "<u4")
+    inverted = np.frombuffer(nvd_create.gray_colors(values, -3, 3, inverted=True), "<u4")
+
+    assert (colors & 0xFF).tolist() == [0, 0, 128, 255, 255]
+    assert (inverted & 0xFF).tolist() == [255, 255, 127, 0, 0]
+    for c in colors.tolist():
+        assert c & 0xFF == (c >> 8) & 0xFF == (c >> 16) & 0xFF and c >> 24 == 255
+
+
+def test_mesh_entry_validates_and_defaults_colors(tmp_path: Path) -> None:
+    positions, indices = nvd_create.read_fs_surface(_write_fs_surface(tmp_path / "s"))
+    layer = nvd_create.mesh_layer(np.zeros(4, "<f4").tobytes(), name="m", colormap="nih")
+
+    mesh = nvd_create.mesh_entry(positions, indices, [layer], name="s", color=[1, 0, 0, 1])
+
+    assert mesh["layers"][0]["colormap"] == "Nih"
+    assert np.frombuffer(mesh["data"]["colors"], "<u4").tolist() == [0xFF0000FF] * 4
+    short = nvd_create.mesh_layer(np.zeros(3, "<f4").tobytes(), name="short")
+    with pytest.raises(ValueError, match="3 values, mesh has 4 vertices"):
+        nvd_create.mesh_entry(positions, indices, [short])
+    with pytest.raises(ValueError, match="out of range"):
+        nvd_create.mesh_entry(positions, np.array([0, 1, 4], "<u4").tobytes())
+    with pytest.raises(ValueError, match="triplets"):
+        nvd_create.mesh_entry(positions[:-4], indices)
+    with pytest.raises(ValueError, match="colours"):
+        nvd_create.mesh_entry(positions, indices, colors=b"\0" * 4)
+
+
+def test_create_nvd_with_mesh_uses_template_options(tmp_path: Path) -> None:
+    surface = _write_fs_surface(tmp_path / "lh.pial")
+    write_morph_data(str(tmp_path / "lh.sulc"), np.arange(4, dtype=np.float32))
+    template = {"meshes": [{"shaderType": "matte", "layers": [{"colormap": "gray", "calMin": 0}]}]}
+
+    doc = nvd_create.create_nvd([], template, [(surface, [tmp_path / "lh.sulc"] * 2)])
+
+    (mesh,) = doc["meshes"]
+    assert (mesh["name"], mesh["shaderType"]) == ("lh.pial", "matte")
+    assert [layer["name"] for layer in mesh["layers"]] == ["lh.sulc", "lh.sulc"]
+    assert [layer["colormap"] for layer in mesh["layers"]] == ["Gray", "Nih"]
+    assert doc["volumes"] == []
+
+
+def test_embed_adds_layer_script_only_for_meshes_with_layers() -> None:
+    html = "<html><body></body></html>"
+    with_layers = nvd_create.to_json({"version": 9, "meshes": [{"layers": [{"data": b""}]}, {}]})
+
+    out = nvd_embed.embed_nvd(html, with_layers)
+
+    assert "nv.setMeshLayerProperty(i, 0, {})" in out
+    assert "var expectedMeshes = 2;" in out
+    assert "setMeshLayerProperty" not in nvd_embed.embed_nvd(html, with_layers, apply_layers=False)
+    assert "setMeshLayerProperty" not in nvd_embed.embed_nvd(html, nvd_create.to_json({"version": 9}))
+
+
+def _fake_fsaverage(tmp_path: Path, monkeypatch) -> None:
+    surf = tmp_path / "fs" / "subjects" / "fsaverage" / "surf"
+    surf.mkdir(parents=True)
+    for hemi in ("lh", "rh"):
+        _write_fs_surface(surf / f"{hemi}.pial")
+        write_morph_data(str(surf / f"{hemi}.sulc"), np.array([-3, 0, 3, 0], np.float32))
+    monkeypatch.setenv("FREESURFER_HOME", str(tmp_path / "fs"))
+    monkeypatch.setattr(report_helpers, "_fsaverage_cache", {})
+    monkeypatch.setattr(report_helpers, "_freebrowse_html_cache", "<html><body></body></html>")
+
+
+def test_generate_freebrowse_surface_viewer(tmp_path: Path, monkeypatch) -> None:
+    _fake_fsaverage(tmp_path, monkeypatch)
+    lh_values = np.array([0, 1, 2, 3], np.float32)
+    rh_values = np.array([4, 5, 6, 0], np.float32)
+    lh = _write_func_gii(tmp_path / "sub-01_hemi-L_mimap.func.gii", lh_values)
+    rh = _write_nifti(tmp_path / "sub-01_hemi-R_mimap.nii.gz", rh_values.reshape(4, 1, 1))
+    out = tmp_path / "figures" / "surf.html"
+
+    generate_freebrowse_surface_viewer({"lh": lh, "rh": rh}, out)
+
+    html = out.read_text(encoding="utf-8")
+    doc = _decode_json(_embedded_json(html))
+    assert "nv.setMeshLayerProperty" in html
+    assert doc["layout"] == {"sliceType": 4} and doc["volumes"] == []
+    lh_mesh, rh_mesh = doc["meshes"]
+    assert (lh_mesh["name"], rh_mesh["name"]) == ("lh.pial", "rh.pial")
+    sulc, overlay = rh_mesh["layers"]
+    assert (sulc["name"], sulc["colormap"]) == ("rh.sulc", "Gray")
+    assert (overlay["name"], overlay["colormap"]) == ("sub-01_hemi-R_mimap.nii.gz", "Nih")
+    assert overlay["data"] == rh_values.astype("<f4").tobytes()
+    vlim = robust_vlim(np.concatenate([lh_values, rh_values]))
+    assert [overlay["calMin"], overlay["calMax"]] == pytest.approx(list(vlim))
+    assert lh_mesh["layers"][1]["calMin"] == overlay["calMin"]
+    # Stored colours: inverted gray sulc over [-3, 3]
+    assert (np.frombuffer(lh_mesh["data"]["colors"], "<u4") & 0xFF).tolist() == [255, 127, 0, 127]
+
+
+def test_generate_freebrowse_surface_viewer_one_hemi_explicit_vlim(tmp_path: Path, monkeypatch) -> None:
+    _fake_fsaverage(tmp_path, monkeypatch)
+    rh = _write_func_gii(tmp_path / "rh.func.gii", np.array([4, 5, 6, 0], np.float32))
+    out = tmp_path / "surf.html"
+
+    generate_freebrowse_surface_viewer({"rh": rh}, out, vlim=(1.0, 9.0))
+
+    (mesh,) = _decode_json(_embedded_json(out.read_text(encoding="utf-8")))["meshes"]
+    assert mesh["name"] == "rh.pial"
+    assert (mesh["layers"][1]["calMin"], mesh["layers"][1]["calMax"]) == (1.0, 9.0)
